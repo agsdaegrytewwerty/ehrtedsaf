@@ -49,7 +49,7 @@ jobs:
         run: |
           set -euxo pipefail
           export GIT_LFS_SKIP_SMUDGE=1
-          git clone --depth 1 --branch "v${BLENDER_VERSION}" https://github.com/blender/blender.git blender-src
+          git clone --depth 1 --branch "v${BLENDER_VERSION}" https://projects.blender.org/blender/blender.git blender-src
           cd blender-src
           git lfs install --local
           git lfs pull --include="release/datafiles/startup.blend" --exclude=""
