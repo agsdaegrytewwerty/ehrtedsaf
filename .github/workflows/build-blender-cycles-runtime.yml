@@ -52,7 +52,7 @@ jobs:
           git clone --depth 1 --branch "v${BLENDER_VERSION}" https://github.com/blender/blender.git blender-src
           cd blender-src
           git lfs install --local
-          git lfs pull
+          git lfs pull --include="release/datafiles/startup.blend" --exclude=""
           python3 build_files/utils/make_update.py --no-blender
 
       - name: Configure
