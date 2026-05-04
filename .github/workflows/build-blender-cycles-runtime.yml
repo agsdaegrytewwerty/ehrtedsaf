@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/build-blender-cycles-runtime.yml"
       - "blender-cycles-headless-rtx.cmake"
+      - "trim_blender_runtime_tree.sh"
       - "README.md"
   workflow_dispatch:
     inputs:
@@ -27,6 +28,7 @@ jobs:
       BLENDER_VERSION: ${{ inputs.blender_version || '5.1.1' }}
       RELEASE_TAG: ${{ inputs.release_tag || 'blender-5.1.1-cycles-headless-rtx' }}
       PREVIOUS_TRIM2_BYTES: "250162556"
+      TRIM_KEEP_CUDA_ARCHES: "86,89"
     steps:
       - name: Check out release repo
         uses: actions/checkout@v4
@@ -83,6 +85,12 @@ jobs:
           rm -rf dist
           mkdir -p "dist/${stage_dir}"
           cp -a build/bin/. "dist/${stage_dir}/"
+          TRIM_PROFILE=farm-nvidia \
+          TRIM_KEEP_CUDA_ARCHES="${TRIM_KEEP_CUDA_ARCHES}" \
+            "${GITHUB_WORKSPACE}/trim_blender_runtime_tree.sh" "dist/${stage_dir}"
+          while IFS= read -r target; do
+            llvm-strip-18 --strip-debug "$target" || true
+          done < <(find "dist/${stage_dir}" -type f \( -name 'blender' -o -name '*.so' -o -name '*.so.*' \) | sort)
           tar -cJf "dist/${asset_name}" -C dist "${stage_dir}"
           sha256sum "dist/${asset_name}" | tee "dist/${asset_name}.sha256"
           stat -c '%s' "dist/${asset_name}" | tee "dist/${asset_name}.bytes"
