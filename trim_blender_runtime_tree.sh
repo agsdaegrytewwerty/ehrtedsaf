@@ -152,6 +152,8 @@ main() {
     remove_glob "$site_packages/OpenImageIO-*.dist-info"
     remove_glob "$site_packages/PyOpenColorIO-*.dist-info"
     remove_glob "$site_packages/usd_core-*.dist-info"
+    remove_glob "$root/lib/libMaterialX*.so*"
+    remove_glob "$root/lib/libusd_ms.so*"
     remove_glob "$root/lib/libOpenImageDenoise_device_hip.so.*"
     remove_glob "$root/lib/libOpenImageDenoise_device_sycl.so.*"
     remove_glob "$root/lib/libsycl.so*"
