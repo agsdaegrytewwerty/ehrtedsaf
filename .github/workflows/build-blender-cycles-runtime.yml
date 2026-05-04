@@ -1,0 +1,158 @@
+name: Build Blender Cycles Runtime
+
+on:
+  push:
+    paths:
+      - ".github/workflows/build-blender-cycles-runtime.yml"
+      - "blender-cycles-headless-rtx.cmake"
+      - "README.md"
+  workflow_dispatch:
+    inputs:
+      blender_version:
+        description: Blender version tag without leading v
+        required: false
+        default: "5.1.1"
+      release_tag:
+        description: Release tag to publish
+        required: false
+        default: "blender-5.1.1-cycles-headless-rtx"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    env:
+      BLENDER_VERSION: ${{ inputs.blender_version || '5.1.1' }}
+      RELEASE_TAG: ${{ inputs.release_tag || 'blender-5.1.1-cycles-headless-rtx' }}
+      PREVIOUS_TRIM2_BYTES: "250162556"
+    steps:
+      - name: Check out release repo
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git \
+            git-lfs \
+            ca-certificates \
+            cmake \
+            ninja-build \
+            clang-18 \
+            lld-18 \
+            xz-utils
+
+      - name: Clone Blender source
+        run: |
+          set -euxo pipefail
+          export GIT_LFS_SKIP_SMUDGE=1
+          git clone --depth 1 --branch "v${BLENDER_VERSION}" https://github.com/blender/blender.git blender-src
+          cd blender-src
+          git lfs install --local
+          git lfs pull
+          python3 build_files/utils/make_update.py --no-blender
+
+      - name: Configure
+        env:
+          CC: clang-18
+          CXX: clang++-18
+        run: |
+          set -euxo pipefail
+          cmake -S blender-src -B build -G Ninja \
+            -C "${GITHUB_WORKSPACE}/blender-cycles-headless-rtx.cmake" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER="${CC}" \
+            -DCMAKE_CXX_COMPILER="${CXX}" \
+            -DCMAKE_EXE_LINKER_FLAGS_INIT="-fuse-ld=lld" \
+            -DCMAKE_SHARED_LINKER_FLAGS_INIT="-fuse-ld=lld"
+
+      - name: Build and install
+        run: |
+          set -euxo pipefail
+          cmake --build build --parallel 4
+          cmake --build build --target install
+
+      - name: Package runtime
+        run: |
+          set -euxo pipefail
+          stage_dir="blender-${BLENDER_VERSION}-linux-x64"
+          asset_name="blender-${BLENDER_VERSION}-linux-x64-cycles-headless-rtx.tar.xz"
+          rm -rf dist
+          mkdir -p "dist/${stage_dir}"
+          cp -a build/bin/. "dist/${stage_dir}/"
+          tar -cJf "dist/${asset_name}" -C dist "${stage_dir}"
+          sha256sum "dist/${asset_name}" | tee "dist/${asset_name}.sha256"
+          stat -c '%s' "dist/${asset_name}" | tee "dist/${asset_name}.bytes"
+          du -sh "dist/${stage_dir}" | tee "dist/${asset_name}.du"
+          {
+            echo "STAGE_DIR=${stage_dir}"
+            echo "ASSET_NAME=${asset_name}"
+          } >> "$GITHUB_ENV"
+
+      - name: Smoke render
+        run: |
+          set -euxo pipefail
+          mkdir -p smoke
+          cat > smoke/smoke_render.py <<'PY'
+          import bpy
+          scene = bpy.context.scene
+          scene.render.engine = "CYCLES"
+          scene.cycles.device = "CPU"
+          scene.cycles.samples = 4
+          scene.render.resolution_x = 128
+          scene.render.resolution_y = 128
+          scene.render.filepath = "//smoke/out.png"
+          bpy.ops.object.select_all(action="SELECT")
+          bpy.ops.object.delete(use_global=False)
+          bpy.ops.mesh.primitive_cube_add(location=(0.0, 0.0, 0.0))
+          bpy.ops.object.light_add(type="SUN", location=(4.0, -4.0, 6.0))
+          bpy.ops.object.camera_add(location=(4.0, -4.0, 3.0), rotation=(1.1, 0.0, 0.8))
+          scene.camera = bpy.context.object
+          bpy.ops.render.render(write_still=True)
+          PY
+          ./dist/${STAGE_DIR}/blender --background --factory-startup --python smoke/smoke_render.py
+          test -s smoke/out.png
+
+      - name: Build summary
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY' | tee dist/build-summary.txt
+          import pathlib
+          import os
+
+          asset_name = os.environ["ASSET_NAME"]
+          new_bytes = int(pathlib.Path(f"dist/{asset_name}.bytes").read_text().strip())
+          old_bytes = int(os.environ["PREVIOUS_TRIM2_BYTES"])
+          saved = old_bytes - new_bytes
+          percent = (saved / old_bytes * 100.0) if old_bytes else 0.0
+          print(f"Previous trim2 bytes: {old_bytes}")
+          print(f"New source-build bytes: {new_bytes}")
+          print(f"Delta bytes: {saved}")
+          print(f"Delta percent: {percent:.3f}%")
+          PY
+          cat dist/build-summary.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: blender-cycles-runtime-${{ env.BLENDER_VERSION }}
+          path: |
+            dist/**
+            smoke/out.png
+
+      - name: Publish release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Blender ${{ env.BLENDER_VERSION }} cycles headless RTX runtime
+          files: |
+            dist/${{ env.ASSET_NAME }}
+            dist/${{ env.ASSET_NAME }}.sha256
+            dist/${{ env.ASSET_NAME }}.bytes
+            dist/${{ env.ASSET_NAME }}.du
+            dist/build-summary.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
