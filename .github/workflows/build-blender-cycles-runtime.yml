@@ -45,6 +45,7 @@ jobs:
             ninja-build \
             clang-18 \
             lld-18 \
+            ripgrep \
             xz-utils
 
       - name: Clone Blender source

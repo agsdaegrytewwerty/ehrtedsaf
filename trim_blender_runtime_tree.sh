@@ -45,9 +45,14 @@ series_from_root() {
   fi
 
   local found=()
+  local series_pattern='^[0-9]+\.[0-9]+$'
   while IFS= read -r dir; do
     found+=("$dir")
-  done < <(find "$root" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | rg '^[0-9]+\.[0-9]+$' | sort)
+  done < <(
+    find "$root" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; \
+      | { if command -v rg >/dev/null 2>&1; then rg "$series_pattern"; else grep -E "$series_pattern"; fi; } \
+      | sort
+  )
 
   if (( ${#found[@]} == 1 )); then
     printf '%s\n' "${found[0]}"
