@@ -5,11 +5,17 @@ log() {
   printf '[trim-blender-runtime] %s\n' "$*" >&2
 }
 
+cleanup_copyfile_artifacts() {
+  local root="${1:-}"
+  [[ -d "$root" ]] || return 0
+  find "$root" -depth \( -name '__MACOSX' -o -name '.DS_Store' -o -name '._*' \) -exec rm -rf {} + 2>/dev/null || true
+}
+
 usage() {
   cat >&2 <<'EOF'
 Usage: trim_blender_runtime_tree.sh /path/to/blender-runtime-root
 
-Trim a Blender runtime tree in place for YesterdayRender's headless Cycles farm
+Trim a Blender runtime tree in place for RenderBoost.io's headless Cycles farm
 use case. This removes build-only Python artifacts plus UI/localization assets
 that are not needed to render already-authored .blend files in background mode.
 EOF
@@ -45,14 +51,9 @@ series_from_root() {
   fi
 
   local found=()
-  local series_pattern='^[0-9]+\.[0-9]+$'
   while IFS= read -r dir; do
     found+=("$dir")
-  done < <(
-    find "$root" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; \
-      | { if command -v rg >/dev/null 2>&1; then rg "$series_pattern"; else grep -E "$series_pattern"; fi; } \
-      | sort
-  )
+  done < <(find "$root" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | rg '^[0-9]+\.[0-9]+$' | sort)
 
   if (( ${#found[@]} == 1 )); then
     printf '%s\n' "${found[0]}"
@@ -64,6 +65,63 @@ series_from_root() {
     log "Candidate series dirs: ${found[*]}"
   fi
   return 1
+}
+
+prune_cycles_kernels_for_release_family() {
+  local runtime_root="${1:-}"
+  local series="${2:-}"
+  local keep_arches_raw="${3:-}"
+  [[ -d "$runtime_root" && -n "$series" && -n "$keep_arches_raw" ]] || return 0
+
+  local kernel_dir="$runtime_root/$series/scripts/addons_core/cycles/lib"
+  [[ -d "$kernel_dir" ]] || return 0
+
+  BLENDER_KERNEL_DIR="$kernel_dir" BLENDER_KEEP_ARCHES="$keep_arches_raw" python3 - <<'PY'
+from pathlib import Path
+import os
+import re
+
+kernel_dir = Path(os.environ["BLENDER_KERNEL_DIR"])
+arches = []
+for match in re.findall(r"\d{2,3}", os.environ.get("BLENDER_KEEP_ARCHES", "")):
+    value = str(int(match))
+    if value not in arches:
+        arches.append(value)
+
+if not arches:
+    raise SystemExit(0)
+
+keep = {path.name for path in kernel_dir.glob("kernel_optix*.zst") if path.is_file()}
+for arch in arches:
+    cubin = kernel_dir / f"kernel_sm_{arch}.cubin.zst"
+    if cubin.is_file():
+        keep.add(cubin.name)
+
+compute_files = sorted(path for path in kernel_dir.glob("kernel_compute_*.ptx.zst") if path.is_file())
+for arch in arches:
+    compute = kernel_dir / f"kernel_compute_{arch}.ptx.zst"
+    if compute.is_file():
+        keep.add(compute.name)
+if not any(name.startswith("kernel_compute_") for name in keep) and compute_files:
+    def compute_key(path: Path):
+        match = re.search(r"kernel_compute_(\d+)\.ptx\.zst$", path.name)
+        return int(match.group(1)) if match else 0
+    fallback = sorted(compute_files, key=compute_key)[0]
+    keep.add(fallback.name)
+
+for path in kernel_dir.glob("kernel_sm_*.cubin.zst"):
+    if path.name not in keep:
+        path.unlink(missing_ok=True)
+for path in compute_files:
+    if path.name not in keep:
+        path.unlink(missing_ok=True)
+
+print(
+    "Kept release-family Cycles kernels: "
+    + ", ".join(sorted(keep))
+    + f" (requested arches: {', '.join(arches)})"
+)
+PY
 }
 
 main() {
@@ -78,6 +136,7 @@ main() {
 
   local before_size
   before_size="$(du -sh "$root" | awk '{print $1}')"
+  cleanup_copyfile_artifacts "$root"
 
   local series
   series="$(series_from_root "$root")"
@@ -106,6 +165,11 @@ main() {
     "$root/blender.svg" \
     "$root/blender-symbolic.svg" \
     "$root/blender-system-info.sh" \
+    "$root/datatoc" \
+    "$root/makesdna" \
+    "$root/makesrna" \
+    "$root/shader_tool" \
+    "$root/zstd_compress" \
     "$root/readme.html"
 
   remove_path \
@@ -149,42 +213,24 @@ main() {
       "$site_packages/OpenImageIO" \
       "$site_packages/PyOpenColorIO" \
       "$root/lib/mesa" \
-      "$root/lib/libhiprt64.so" \
-      "$root/lib/libcycles_kernel_oneapi_aot.so"
+      "$root/lib/libhiprt64.so"
 
     remove_glob "$site_packages/openvdb.cpython-*.so"
     remove_glob "$site_packages/MaterialX-*.dist-info"
     remove_glob "$site_packages/OpenImageIO-*.dist-info"
     remove_glob "$site_packages/PyOpenColorIO-*.dist-info"
     remove_glob "$site_packages/usd_core-*.dist-info"
-    remove_glob "$root/lib/libMaterialX*.so*"
-    remove_glob "$root/lib/libusd_ms.so*"
     remove_glob "$root/lib/libOpenImageDenoise_device_hip.so.*"
-    remove_glob "$root/lib/libOpenImageDenoise_device_sycl.so.*"
-    remove_glob "$root/lib/libsycl.so*"
-    remove_glob "$root/lib/libur_adapter_level_zero.so*"
-    remove_glob "$root/lib/libur_loader.so*"
     remove_glob "$root/lib/libvulkan.so*"
     remove_glob "$series_dir/scripts/addons_core/cycles/lib/kernel_gfx*.zst"
     remove_glob "$series_dir/scripts/addons_core/cycles/lib/kernel_rt_gfx*.zst"
 
     local keep_cuda_arches="${TRIM_KEEP_CUDA_ARCHES:-}"
-    if [[ -n "$keep_cuda_arches" ]]; then
-      local normalized_keep=",$(printf '%s' "$keep_cuda_arches" | tr -d ' '),"
-      normalized_keep="${normalized_keep//,,/,}"
-      local cubin base arch
-      while IFS= read -r cubin; do
-        base="$(basename "$cubin")"
-        arch="${base#kernel_sm_}"
-        arch="${arch%.cubin.zst}"
-        if [[ "$normalized_keep" != *",$arch,"* ]]; then
-          remove_path "$cubin"
-        fi
-      done < <(find "$series_dir/scripts/addons_core/cycles/lib" -maxdepth 1 -type f -name 'kernel_sm_*.cubin.zst' | sort)
-    fi
+    prune_cycles_kernels_for_release_family "$root" "$series" "$keep_cuda_arches"
   fi
 
   local after_size
+  cleanup_copyfile_artifacts "$root"
   after_size="$(du -sh "$root" | awk '{print $1}')"
   log "Trim complete: $before_size -> $after_size"
 }

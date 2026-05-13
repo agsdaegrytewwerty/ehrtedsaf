@@ -1,6 +1,6 @@
 set(WITH_HEADLESS ON CACHE BOOL "" FORCE)
 
-# Worker runtime only: no windowing, audio, XR, or desktop helpers.
+# Worker runtime only: no desktop windowing/audio stack or viewer helpers.
 set(WITH_BLENDER_THUMBNAILER OFF CACHE BOOL "" FORCE)
 set(WITH_INTERNATIONAL OFF CACHE BOOL "" FORCE)
 set(WITH_AUDASPACE OFF CACHE BOOL "" FORCE)
@@ -21,9 +21,8 @@ set(WITH_GHOST_WAYLAND OFF CACHE BOOL "" FORCE)
 set(WITH_OPENGL_BACKEND OFF CACHE BOOL "" FORCE)
 set(WITH_VULKAN_BACKEND OFF CACHE BOOL "" FORCE)
 
-# Keep Cycles, image IO, color management, denoise, and core simulation/runtime
-# features that can still be needed when evaluating authored .blend files.
-# Drop interchange and non-NVIDIA compute backends.
+# Keep core Cycles/image/runtime behavior; drop interchange and non-NVIDIA
+# compute backends that do not help RenderBoost.io's Linux RTX pools.
 set(WITH_USD OFF CACHE BOOL "" FORCE)
 set(WITH_MATERIALX OFF CACHE BOOL "" FORCE)
 set(WITH_HYDRA OFF CACHE BOOL "" FORCE)
