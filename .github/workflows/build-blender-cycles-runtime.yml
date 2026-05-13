@@ -93,10 +93,6 @@ jobs:
           TRIM_PROFILE=farm-nvidia \
             "${GITHUB_WORKSPACE}/trim_blender_runtime_tree.sh" "$base_root"
 
-          while IFS= read -r target; do
-            llvm-strip-18 --strip-debug "$target" || true
-          done < <(find "$base_root" -type f \( -name 'blender' -o -name '*.so' -o -name '*.so.*' \) | sort)
-
           package_variant() {
             local label="$1"
             local keep_arches="$2"
