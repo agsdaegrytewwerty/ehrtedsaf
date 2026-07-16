@@ -11,6 +11,8 @@ YesterdayRender Cycles GPU pools:
 - no windowing/audio stack
 - no USD/Hydra/MaterialX
 
+Current default build: Blender 5.2.0.
+
 Workflow:
 
 - `.github/workflows/build-blender-cycles-runtime.yml`

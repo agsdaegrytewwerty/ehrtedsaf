@@ -12,11 +12,11 @@ on:
       blender_version:
         description: Blender version tag without leading v
         required: false
-        default: "5.1.1"
+        default: "5.2.0"
       release_tag:
         description: Release tag to publish
         required: false
-        default: "blender-5.1.1-cycles-headless-rtx"
+        default: "blender-5.2.0-cycles-headless-rtx"
 
 permissions:
   contents: write
@@ -25,9 +25,9 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     env:
-      BLENDER_VERSION: ${{ inputs.blender_version || '5.1.1' }}
-      RELEASE_TAG: ${{ inputs.release_tag || 'blender-5.1.1-cycles-headless-rtx' }}
-      PREVIOUS_TRIM2_BYTES: "250162556"
+      BLENDER_VERSION: ${{ inputs.blender_version || '5.2.0' }}
+      RELEASE_TAG: ${{ inputs.release_tag || 'blender-5.2.0-cycles-headless-rtx' }}
+      PREVIOUS_TRIM2_BYTES: "185782456"
     steps:
       - name: Check out release repo
         uses: actions/checkout@v4
