@@ -117,7 +117,7 @@ apt-get update
 apt-get install -y --no-install-recommends \
   ca-certificates \
   curl \
-  libegl1 \
+  libegl-dev \
   xz-utils \
   zstd
 nvidia-smi
