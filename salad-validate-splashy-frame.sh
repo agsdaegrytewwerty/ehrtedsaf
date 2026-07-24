@@ -53,6 +53,11 @@ PY
 
 finish() {
   local exit_code=$?
+  local crash_file
+  while IFS= read -r crash_file; do
+    echo "===== Blender crash report: $crash_file ====="
+    sed -n '1,1200p' "$crash_file" || true
+  done < <(find /tmp "$WORK_ROOT" -maxdepth 3 -type f -name '*.crash.txt' 2>/dev/null)
   if (( exit_code == 0 )); then
     write_status "complete" "Splashy frame ${SPLASHY_FRAME} rendered on OptiX."
   else
