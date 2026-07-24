@@ -117,6 +117,7 @@ apt-get install -y --no-install-recommends \
   curl \
   git \
   git-lfs \
+  libegl-dev \
   lld-18 \
   ninja-build \
   pkg-config \

@@ -45,6 +45,7 @@ jobs:
             curl \
             ninja-build \
             clang-18 \
+            libegl-dev \
             lld-18 \
             ripgrep \
             xz-utils
