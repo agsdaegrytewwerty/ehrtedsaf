@@ -114,7 +114,12 @@ install_optix_driver_libraries_if_needed() {
 write_status "provisioning" "Installing validation dependencies and OptiX user-mode libraries."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends ca-certificates curl xz-utils zstd
+apt-get install -y --no-install-recommends \
+  ca-certificates \
+  curl \
+  libegl1 \
+  xz-utils \
+  zstd
 nvidia-smi
 install_optix_driver_libraries_if_needed
 
