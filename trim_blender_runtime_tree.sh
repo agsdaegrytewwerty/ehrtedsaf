@@ -183,7 +183,6 @@ main() {
     "$series_dir/datafiles/icons" \
     "$series_dir/datafiles/studiolights" \
     "$series_dir/datafiles/assets" \
-    "$series_dir/python/bin" \
     "$python_base/ensurepip" \
     "$site_packages/pip" \
     "$site_packages/setuptools" \
@@ -192,6 +191,10 @@ main() {
     "$site_packages/Cython" \
     "$site_packages/pyximport" \
     "$site_packages/distutils-precedence.pth"
+
+  # Keep the embedded Python executable. Blender uses it to recognize the
+  # portable Python home and expose its bundled site-packages (including
+  # cattrs/requests required by the built-in extension manager).
 
   remove_glob "$series_dir/python/lib/libpython*.a"
   remove_glob "$python_base/config-*"

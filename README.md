@@ -8,6 +8,7 @@ YesterdayRender Cycles GPU pools:
 - headless only
 - NVIDIA OptiX + CUDA enabled
 - Open Shading Language enabled for OptiX OSL projects
+- headless EGL/OpenGL context support for GPU-composited scenes
 - no oneAPI/HIP backends
 - no windowing/audio stack
 - no USD/Hydra/MaterialX

@@ -18,7 +18,11 @@ set(WITH_INPUT_NDOF OFF CACHE BOOL "" FORCE)
 set(WITH_X11_XINPUT OFF CACHE BOOL "" FORCE)
 set(WITH_GHOST_X11 OFF CACHE BOOL "" FORCE)
 set(WITH_GHOST_WAYLAND OFF CACHE BOOL "" FORCE)
-set(WITH_OPENGL_BACKEND OFF CACHE BOOL "" FORCE)
+# Background renders with the GPU compositor or Grease Pencil still create a
+# GHOST off-screen draw context. On Linux, the headless implementation uses
+# EGL through the OpenGL backend; disabling every graphics backend makes that
+# context null and crashes Blender before Cycles starts.
+set(WITH_OPENGL_BACKEND ON CACHE BOOL "" FORCE)
 set(WITH_VULKAN_BACKEND OFF CACHE BOOL "" FORCE)
 
 # Keep core Cycles/image/runtime behavior; drop interchange and non-NVIDIA

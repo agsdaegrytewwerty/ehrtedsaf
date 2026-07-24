@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 BLENDER_VERSION="${BLENDER_VERSION:-5.2.0}"
 BLENDER_SERIES="${BLENDER_SERIES:-5.2}"
-RELEASE_LABEL="${RELEASE_LABEL:-blender-5.2.0-cycles-headless-rtx-osl-v1}"
+RELEASE_LABEL="${RELEASE_LABEL:-blender-5.2.0-cycles-headless-rtx-osl-v2}"
 ASSET_PREFIX="${ASSET_PREFIX:-blender-${BLENDER_VERSION}-linux-x64-cycles-headless-rtx-osl}"
 OPTIX_HEADERS_COMMIT="${OPTIX_HEADERS_COMMIT:-df7390b16bce5244b7352ca6d3e320f838297072}"
 WORK_ROOT="${WORK_ROOT:-/work/renderboost-blender-build}"
@@ -171,6 +171,7 @@ grep -Eq '^OPTIX_INCLUDE_DIR:PATH=.*/optix-sdk/3rdParty/optix/include$' \
   build/CMakeCache.txt
 grep -q '^WITH_CYCLES_DEVICE_OPTIX:BOOL=ON$' build/CMakeCache.txt
 grep -q '^WITH_CYCLES_OSL:BOOL=ON$' build/CMakeCache.txt
+grep -q '^WITH_OPENGL_BACKEND:BOOL=ON$' build/CMakeCache.txt
 
 write_status "compile" "Compiling Blender ${BLENDER_VERSION} with OSL enabled."
 cmake --build build --parallel "$(nproc)"
@@ -219,6 +220,7 @@ done
 write_status "trim" "Trimming the base runtime while retaining NVIDIA and OSL support."
 TRIM_PROFILE=farm-nvidia \
   "$WORK_ROOT/release-config/trim_blender_runtime_tree.sh" "$base_root"
+test -x "$base_root/${BLENDER_SERIES}/python/bin/python3.13"
 
 mkdir -p smoke
 cat >smoke/gpu_smoke.py <<'PY'
@@ -244,6 +246,8 @@ scene.render.resolution_y = 96
 scene.render.resolution_percentage = 100
 scene.render.image_settings.file_format = "PNG"
 scene.render.filepath = args.output
+scene.use_nodes = True
+scene.render.compositor_device = "GPU"
 
 if args.osl:
     scene.cycles.shading_system = True
@@ -291,6 +295,7 @@ print(
     + json.dumps(
         {
             "backend": args.backend,
+            "compositor": scene.render.compositor_device,
             "devices": selected,
             "osl": args.osl,
             "output_bytes": output.stat().st_size,
@@ -311,6 +316,7 @@ write_status "validate-cuda" "Rendering the CUDA smoke frame on the RTX 3090."
   --output "$WORK_ROOT/smoke/cuda.png" \
   2>&1 | tee "$WORK_ROOT/smoke/cuda.log"
 grep -q '__RENDERBOOST_GPU_SMOKE__' "$WORK_ROOT/smoke/cuda.log"
+! grep -Eq 'Traceback|ModuleNotFoundError|Segmentation fault' "$WORK_ROOT/smoke/cuda.log"
 test -s "$WORK_ROOT/smoke/cuda.png"
 
 write_status "validate-optix" "Rendering the OptiX smoke frame on the RTX 3090."
@@ -320,6 +326,7 @@ write_status "validate-optix" "Rendering the OptiX smoke frame on the RTX 3090."
   --output "$WORK_ROOT/smoke/optix.png" \
   2>&1 | tee "$WORK_ROOT/smoke/optix.log"
 grep -q '__RENDERBOOST_GPU_SMOKE__' "$WORK_ROOT/smoke/optix.log"
+! grep -Eq 'Traceback|ModuleNotFoundError|Segmentation fault' "$WORK_ROOT/smoke/optix.log"
 test -s "$WORK_ROOT/smoke/optix.png"
 
 write_status "validate-osl" "Rendering the OptiX OSL smoke frame on the RTX 3090."
@@ -330,6 +337,7 @@ write_status "validate-osl" "Rendering the OptiX OSL smoke frame on the RTX 3090
   --output "$WORK_ROOT/smoke/optix-osl.png" \
   2>&1 | tee "$WORK_ROOT/smoke/optix-osl.log"
 grep -q '__RENDERBOOST_GPU_SMOKE__' "$WORK_ROOT/smoke/optix-osl.log"
+! grep -Eq 'Traceback|ModuleNotFoundError|Segmentation fault' "$WORK_ROOT/smoke/optix-osl.log"
 test -s "$WORK_ROOT/smoke/optix-osl.png"
 
 write_status "package" "Creating safe and per-SM-family runtime archives."
