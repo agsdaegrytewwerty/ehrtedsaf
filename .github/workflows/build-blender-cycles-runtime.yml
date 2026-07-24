@@ -16,7 +16,7 @@ on:
       release_tag:
         description: Release tag to publish
         required: false
-        default: "blender-5.2.0-cycles-headless-rtx"
+        default: "blender-5.2.0-cycles-headless-rtx-osl-v1"
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       BLENDER_VERSION: ${{ inputs.blender_version || '5.2.0' }}
-      RELEASE_TAG: ${{ inputs.release_tag || 'blender-5.2.0-cycles-headless-rtx' }}
+      RELEASE_TAG: ${{ inputs.release_tag || 'blender-5.2.0-cycles-headless-rtx-osl-v1' }}
       PREVIOUS_TRIM2_BYTES: "185782456"
     steps:
       - name: Check out release repo
@@ -41,6 +41,7 @@ jobs:
             git-lfs \
             ca-certificates \
             cmake \
+            curl \
             ninja-build \
             clang-18 \
             lld-18 \
@@ -82,13 +83,39 @@ jobs:
           set -euxo pipefail
 
           version="${BLENDER_VERSION}"
+          series="${version%.*}"
           stage_dir="blender-${version}-linux-x64"
-          asset_prefix="blender-${version}-linux-x64-cycles-headless-rtx"
+          asset_prefix="blender-${version}-linux-x64-cycles-headless-rtx-osl"
           base_root="dist/base/${stage_dir}"
 
           rm -rf dist
           mkdir -p "$base_root"
           cp -a build/bin/. "$base_root/"
+
+          official_archive="dist/blender-${version}-official.tar.xz"
+          official_runtime="dist/official-runtime"
+          curl -fsSL --retry 8 --retry-all-errors --retry-delay 3 \
+            "https://download.blender.org/release/Blender${series}/blender-${version}-linux-x64.tar.xz" \
+            -o "$official_archive"
+          mkdir -p "$official_runtime"
+          tar -xJf "$official_archive" -C "$official_runtime" \
+            --wildcards "*/${series}/scripts/addons_core/cycles/lib/kernel_*.zst"
+          official_kernel_dir="$(find "$official_runtime" -type d -path "*/${series}/scripts/addons_core/cycles/lib" | head -n 1)"
+          target_kernel_dir="$base_root/${series}/scripts/addons_core/cycles/lib"
+          test -d "$official_kernel_dir"
+          mkdir -p "$target_kernel_dir"
+          cp -a "$official_kernel_dir"/kernel_*.zst "$target_kernel_dir/"
+          for required_kernel in \
+            kernel_compute_75.ptx.zst \
+            kernel_sm_75.cubin.zst \
+            kernel_sm_86.cubin.zst \
+            kernel_sm_120.cubin.zst \
+            kernel_optix.ptx.zst \
+            kernel_optix_osl.ptx.zst \
+            kernel_optix_osl_services.ptx.zst \
+            kernel_optix_osl_volume.ptx.zst; do
+            test -s "$target_kernel_dir/$required_kernel"
+          done
 
           TRIM_PROFILE=farm-nvidia \
             "${GITHUB_WORKSPACE}/trim_blender_runtime_tree.sh" "$base_root"
@@ -119,7 +146,9 @@ jobs:
 
           package_variant sm75 "75" "${asset_prefix}-sm75"
           package_variant sm86 "86" "${asset_prefix}-sm86"
-          package_variant sm89 "89" "${asset_prefix}-sm89"
+          # Blender 5.2 has no distinct sm_89 cubin. NVIDIA guarantees that the
+          # sm_86 cubin runs on sm_89, so retain it with the PTX fallback.
+          package_variant sm89 "86 89" "${asset_prefix}-sm89"
           package_variant sm120 "120" "${asset_prefix}-sm120"
 
           ASSET_PREFIX="${asset_prefix}" python3 - <<'PY'
@@ -159,6 +188,7 @@ jobs:
           scene = bpy.context.scene
           scene.render.engine = "CYCLES"
           scene.cycles.device = "CPU"
+          scene.cycles.shading_system = "OSL"
           scene.cycles.samples = 4
           scene.render.resolution_x = 128
           scene.render.resolution_y = 128
@@ -205,33 +235,33 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          name: Blender ${{ env.BLENDER_VERSION }} cycles headless RTX runtime
+          name: Blender ${{ env.BLENDER_VERSION }} cycles headless RTX + OSL runtime
           overwrite_files: true
           files: |
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx.tar.xz
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx.tar.xz.sha256
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx.tar.xz.bytes
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx.tar.xz.du
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-safe.tar.xz
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-safe.tar.xz.sha256
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-safe.tar.xz.bytes
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-safe.tar.xz.du
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-sm75.tar.xz
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-sm75.tar.xz.sha256
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-sm75.tar.xz.bytes
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-sm75.tar.xz.du
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-sm86.tar.xz
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-sm86.tar.xz.sha256
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-sm86.tar.xz.bytes
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-sm86.tar.xz.du
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-sm89.tar.xz
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-sm89.tar.xz.sha256
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-sm89.tar.xz.bytes
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-sm89.tar.xz.du
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-sm120.tar.xz
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-sm120.tar.xz.sha256
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-sm120.tar.xz.bytes
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-sm120.tar.xz.du
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl.tar.xz
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl.tar.xz.sha256
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl.tar.xz.bytes
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl.tar.xz.du
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-safe.tar.xz
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-safe.tar.xz.sha256
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-safe.tar.xz.bytes
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-safe.tar.xz.du
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm75.tar.xz
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm75.tar.xz.sha256
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm75.tar.xz.bytes
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm75.tar.xz.du
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm86.tar.xz
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm86.tar.xz.sha256
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm86.tar.xz.bytes
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm86.tar.xz.du
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm89.tar.xz
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm89.tar.xz.sha256
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm89.tar.xz.bytes
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm89.tar.xz.du
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm120.tar.xz
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm120.tar.xz.sha256
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm120.tar.xz.bytes
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm120.tar.xz.du
             dist/release-assets.json
             dist/build-summary.txt
         env:
