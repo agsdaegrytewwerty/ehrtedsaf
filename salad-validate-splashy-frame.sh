@@ -128,10 +128,13 @@ tar -xJf "$runtime_archive" -C "$runtime_root"
 tar --zstd -xf "$project_archive" -C "$project_root"
 
 blender_binary="$(find "$runtime_root" -mindepth 2 -maxdepth 2 -type f -name blender -perm -111 | head -n 1)"
+python_site_packages="$(find "$runtime_root" -type d -path "*/5.2/python/lib/python3.13/site-packages" | head -n 1)"
 project_file="$project_root/splashy-packed.blend"
 test -x "$blender_binary"
+test -d "$python_site_packages"
 test -s "$project_file"
 test -d "$project_root/blendcache_splashy-packed"
+export PYTHONPATH="$python_site_packages${PYTHONPATH:+:$PYTHONPATH}"
 
 cat >"$WORK_ROOT/render_splashy.py" <<'PY'
 import bpy
@@ -200,7 +203,8 @@ write_status "render" "Rendering Splashy frame ${SPLASHY_FRAME} at its saved ful
 export SPLASHY_FRAME
 export SPLASHY_OUTPUT="$IMAGE_PATH"
 export SPLASHY_RESULT="$RESULT_PATH"
-"$blender_binary" --background "$project_file" --python "$WORK_ROOT/render_splashy.py"
+"$blender_binary" --enable-autoexec --background "$project_file" \
+  --python "$WORK_ROOT/render_splashy.py"
 test -s "$IMAGE_PATH"
 test -s "$RESULT_PATH"
 
