@@ -208,7 +208,8 @@ write_status "render" "Rendering Splashy frame ${SPLASHY_FRAME} at its saved ful
 export SPLASHY_FRAME
 export SPLASHY_OUTPUT="$IMAGE_PATH"
 export SPLASHY_RESULT="$RESULT_PATH"
-"$blender_binary" --enable-autoexec --background "$project_file" \
+"$blender_binary" --python-use-system-env --enable-autoexec \
+  --background "$project_file" \
   --python "$WORK_ROOT/render_splashy.py"
 test -s "$IMAGE_PATH"
 test -s "$RESULT_PATH"
