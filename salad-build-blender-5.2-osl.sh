@@ -349,15 +349,19 @@ package_variant() {
   fi
   tar -cJf "$WORK_ROOT/dist/artifacts/${asset_name}.tar.xz" \
     -C "$WORK_ROOT/dist/work/$label" "$stage_dir"
-  sha256sum "$WORK_ROOT/dist/artifacts/${asset_name}.tar.xz" \
-    >"$WORK_ROOT/dist/artifacts/${asset_name}.tar.xz.sha256"
+  (
+    cd "$WORK_ROOT/dist/artifacts"
+    sha256sum "${asset_name}.tar.xz" >"${asset_name}.tar.xz.sha256"
+  )
 }
 
 package_variant safe "" "${ASSET_PREFIX}-safe"
 cp "dist/artifacts/${ASSET_PREFIX}-safe.tar.xz" \
   "dist/artifacts/${ASSET_PREFIX}.tar.xz"
-cp "dist/artifacts/${ASSET_PREFIX}-safe.tar.xz.sha256" \
-  "dist/artifacts/${ASSET_PREFIX}.tar.xz.sha256"
+(
+  cd "$WORK_ROOT/dist/artifacts"
+  sha256sum "${ASSET_PREFIX}.tar.xz" >"${ASSET_PREFIX}.tar.xz.sha256"
+)
 package_variant sm75 "75" "${ASSET_PREFIX}-sm75"
 package_variant sm86 "86" "${ASSET_PREFIX}-sm86"
 # CUDA guarantees that an sm_86 cubin runs on sm_89. Blender 5.2 does not

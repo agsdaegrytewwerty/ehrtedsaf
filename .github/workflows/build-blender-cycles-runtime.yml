@@ -160,14 +160,20 @@ jobs:
                 "${GITHUB_WORKSPACE}/trim_blender_runtime_tree.sh" "$work_root"
             fi
             tar -cJf "dist/${asset_base}.tar.xz" -C "dist/work/${label}" "${stage_dir}"
-            sha256sum "dist/${asset_base}.tar.xz" | tee "dist/${asset_base}.tar.xz.sha256"
+            (
+              cd dist
+              sha256sum "${asset_base}.tar.xz" | tee "${asset_base}.tar.xz.sha256"
+            )
             stat -c '%s' "dist/${asset_base}.tar.xz" | tee "dist/${asset_base}.tar.xz.bytes"
             du -sh "$work_root" | tee "dist/${asset_base}.tar.xz.du"
           }
 
           package_variant safe "" "${asset_prefix}-safe"
           cp "dist/${asset_prefix}-safe.tar.xz" "dist/${asset_prefix}.tar.xz"
-          cp "dist/${asset_prefix}-safe.tar.xz.sha256" "dist/${asset_prefix}.tar.xz.sha256"
+          (
+            cd dist
+            sha256sum "${asset_prefix}.tar.xz" >"${asset_prefix}.tar.xz.sha256"
+          )
           cp "dist/${asset_prefix}-safe.tar.xz.bytes" "dist/${asset_prefix}.tar.xz.bytes"
           cp "dist/${asset_prefix}-safe.tar.xz.du" "dist/${asset_prefix}.tar.xz.du"
 
