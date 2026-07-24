@@ -5,6 +5,7 @@ BLENDER_VERSION="${BLENDER_VERSION:-5.2.0}"
 BLENDER_SERIES="${BLENDER_SERIES:-5.2}"
 RELEASE_LABEL="${RELEASE_LABEL:-blender-5.2.0-cycles-headless-rtx-osl-v1}"
 ASSET_PREFIX="${ASSET_PREFIX:-blender-${BLENDER_VERSION}-linux-x64-cycles-headless-rtx-osl}"
+OPTIX_HEADERS_COMMIT="${OPTIX_HEADERS_COMMIT:-df7390b16bce5244b7352ca6d3e320f838297072}"
 WORK_ROOT="${WORK_ROOT:-/work/renderboost-blender-build}"
 RESULT_PUT_URL="${RESULT_PUT_URL:?RESULT_PUT_URL is required}"
 STATUS_PUT_URL="${STATUS_PUT_URL:?STATUS_PUT_URL is required}"
@@ -128,7 +129,7 @@ nvidia-smi
 install_optix_driver_libraries_if_needed
 
 cd "$WORK_ROOT"
-rm -rf blender-src release-config build dist official-runtime smoke
+rm -rf blender-src release-config optix-sdk build dist official-runtime smoke
 
 write_status "source" "Cloning Blender ${BLENDER_VERSION} and the lightweight release profile."
 export GIT_LFS_SKIP_SMUDGE=1
@@ -147,14 +148,29 @@ grep -q 'WITH_CYCLES_OSL ON' release-config/blender-cycles-headless-rtx.cmake
   python3 build_files/utils/make_update.py --no-blender
 )
 
+optix_headers_archive="$WORK_ROOT/optix-headers.tar.gz"
+curl -fsSL --retry 8 --retry-all-errors --retry-delay 3 \
+  "https://github.com/NVIDIA/OWL/archive/${OPTIX_HEADERS_COMMIT}.tar.gz" \
+  -o "$optix_headers_archive"
+mkdir -p optix-sdk
+tar -xzf "$optix_headers_archive" -C optix-sdk --strip-components=1
+test -s optix-sdk/3rdParty/optix/include/optix.h
+grep -q '#define OPTIX_VERSION 80000' \
+  optix-sdk/3rdParty/optix/include/optix.h
+
 write_status "configure" "Configuring the lightweight OSL, CUDA, and OptiX build."
 CC=clang-18 CXX=clang++-18 cmake -S blender-src -B build -G Ninja \
   -C "$WORK_ROOT/release-config/blender-cycles-headless-rtx.cmake" \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_C_COMPILER=clang-18 \
   -DCMAKE_CXX_COMPILER=clang++-18 \
+  -DOPTIX_ROOT_DIR="$WORK_ROOT/optix-sdk/3rdParty/optix" \
   -DCMAKE_EXE_LINKER_FLAGS_INIT="-fuse-ld=lld" \
   -DCMAKE_SHARED_LINKER_FLAGS_INIT="-fuse-ld=lld"
+grep -Eq '^OPTIX_INCLUDE_DIR:PATH=.*/optix-sdk/3rdParty/optix/include$' \
+  build/CMakeCache.txt
+grep -q '^WITH_CYCLES_DEVICE_OPTIX:BOOL=ON$' build/CMakeCache.txt
+grep -q '^WITH_CYCLES_OSL:BOOL=ON$' build/CMakeCache.txt
 
 write_status "compile" "Compiling Blender ${BLENDER_VERSION} with OSL enabled."
 cmake --build build --parallel "$(nproc)"
@@ -172,12 +188,21 @@ curl -fsSL --retry 8 --retry-all-errors --retry-delay 3 \
   -o "$official_archive"
 mkdir -p official-runtime
 tar -xJf "$official_archive" -C official-runtime \
-  --wildcards "*/${BLENDER_SERIES}/scripts/addons_core/cycles/lib/kernel_*.zst"
+  --wildcards \
+  "*/${BLENDER_SERIES}/scripts/addons_core/cycles/lib/kernel_*.zst" \
+  "*/${BLENDER_SERIES}/python/lib/python3.13/site-packages/attrs*" \
+  "*/${BLENDER_SERIES}/python/lib/python3.13/site-packages/cattrs*"
 official_kernel_dir="$(find official-runtime -type d -path "*/${BLENDER_SERIES}/scripts/addons_core/cycles/lib" | head -n 1)"
 target_kernel_dir="$base_root/${BLENDER_SERIES}/scripts/addons_core/cycles/lib"
 test -d "$official_kernel_dir"
 mkdir -p "$target_kernel_dir"
 cp -a "$official_kernel_dir"/kernel_*.zst "$target_kernel_dir/"
+official_site_packages="$(find official-runtime -type d -path "*/${BLENDER_SERIES}/python/lib/python3.13/site-packages" | head -n 1)"
+target_site_packages="$base_root/${BLENDER_SERIES}/python/lib/python3.13/site-packages"
+test -d "$official_site_packages/cattrs"
+test -d "$official_site_packages/attrs"
+cp -a "$official_site_packages"/attrs* "$target_site_packages/"
+cp -a "$official_site_packages"/cattrs* "$target_site_packages/"
 
 for required_kernel in \
   kernel_compute_75.ptx.zst \
@@ -221,7 +246,7 @@ scene.render.image_settings.file_format = "PNG"
 scene.render.filepath = args.output
 
 if args.osl:
-    scene.cycles.shading_system = "OSL"
+    scene.cycles.shading_system = True
 
 preferences = bpy.context.preferences.addons["cycles"].preferences
 preferences.compute_device_type = args.backend
@@ -283,20 +308,29 @@ write_status "validate-cuda" "Rendering the CUDA smoke frame on the RTX 3090."
 "$blender_binary" --background --factory-startup \
   --python smoke/gpu_smoke.py -- \
   --backend CUDA \
-  --output "$WORK_ROOT/smoke/cuda.png"
+  --output "$WORK_ROOT/smoke/cuda.png" \
+  2>&1 | tee "$WORK_ROOT/smoke/cuda.log"
+grep -q '__RENDERBOOST_GPU_SMOKE__' "$WORK_ROOT/smoke/cuda.log"
+test -s "$WORK_ROOT/smoke/cuda.png"
 
 write_status "validate-optix" "Rendering the OptiX smoke frame on the RTX 3090."
 "$blender_binary" --background --factory-startup \
   --python smoke/gpu_smoke.py -- \
   --backend OPTIX \
-  --output "$WORK_ROOT/smoke/optix.png"
+  --output "$WORK_ROOT/smoke/optix.png" \
+  2>&1 | tee "$WORK_ROOT/smoke/optix.log"
+grep -q '__RENDERBOOST_GPU_SMOKE__' "$WORK_ROOT/smoke/optix.log"
+test -s "$WORK_ROOT/smoke/optix.png"
 
 write_status "validate-osl" "Rendering the OptiX OSL smoke frame on the RTX 3090."
 "$blender_binary" --background --factory-startup \
   --python smoke/gpu_smoke.py -- \
   --backend OPTIX \
   --osl \
-  --output "$WORK_ROOT/smoke/optix-osl.png"
+  --output "$WORK_ROOT/smoke/optix-osl.png" \
+  2>&1 | tee "$WORK_ROOT/smoke/optix-osl.log"
+grep -q '__RENDERBOOST_GPU_SMOKE__' "$WORK_ROOT/smoke/optix-osl.log"
+test -s "$WORK_ROOT/smoke/optix-osl.png"
 
 write_status "package" "Creating safe and per-SM-family runtime archives."
 mkdir -p dist/work dist/artifacts
