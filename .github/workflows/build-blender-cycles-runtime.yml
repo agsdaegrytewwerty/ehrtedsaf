@@ -16,7 +16,7 @@ on:
       release_tag:
         description: Release tag to publish
         required: false
-        default: "blender-5.2.0-cycles-headless-rtx-osl-v2"
+        default: "blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-v3"
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       BLENDER_VERSION: ${{ inputs.blender_version || '5.2.0' }}
-      RELEASE_TAG: ${{ inputs.release_tag || 'blender-5.2.0-cycles-headless-rtx-osl-v2' }}
+      RELEASE_TAG: ${{ inputs.release_tag || 'blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-v3' }}
       OPTIX_HEADERS_COMMIT: df7390b16bce5244b7352ca6d3e320f838297072
       PREVIOUS_TRIM2_BYTES: "185782456"
     steps:
@@ -90,6 +90,7 @@ jobs:
             build/CMakeCache.txt
           grep -q '^WITH_CYCLES_DEVICE_OPTIX:BOOL=ON$' build/CMakeCache.txt
           grep -q '^WITH_CYCLES_OSL:BOOL=ON$' build/CMakeCache.txt
+          grep -q '^WITH_CODEC_FFMPEG:BOOL=ON$' build/CMakeCache.txt
           grep -q '^WITH_OPENGL_BACKEND:BOOL=ON$' build/CMakeCache.txt
 
       - name: Build and install
@@ -220,6 +221,7 @@ jobs:
           mkdir -p smoke
           cat > smoke/smoke_render.py <<'PY'
           import bpy
+          assert bpy.app.build_options.ffmpeg, "Blender runtime was built without FFmpeg"
           scene = bpy.context.scene
           scene.render.engine = "CYCLES"
           scene.cycles.device = "CPU"
