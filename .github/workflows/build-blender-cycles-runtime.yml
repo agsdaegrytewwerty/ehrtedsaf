@@ -221,7 +221,7 @@ jobs:
           mkdir -p smoke
           cat > smoke/smoke_render.py <<'PY'
           import bpy
-          assert bpy.app.build_options.ffmpeg, "Blender runtime was built without FFmpeg"
+          assert bpy.app.build_options.codec_ffmpeg, "Blender runtime was built without FFmpeg"
           scene = bpy.context.scene
           scene.render.engine = "CYCLES"
           scene.cycles.device = "CPU"
