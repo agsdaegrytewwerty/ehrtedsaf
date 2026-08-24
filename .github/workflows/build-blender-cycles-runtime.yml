@@ -9,6 +9,7 @@ on:
       - "blender-cycles-headless-rtx.cmake"
       - "blender-cycles-headless-rtx-audio.cmake"
       - "trim_blender_runtime_tree.sh"
+      - "verify_blender_runtime_tree.sh"
       - "README.md"
   workflow_dispatch:
     inputs:
@@ -19,7 +20,7 @@ on:
       release_tag:
         description: Release tag to publish
         required: false
-        default: "blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-v3"
+        default: "blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-v4"
       runtime_profile:
         description: Runtime feature profile
         required: false
@@ -37,11 +38,13 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       BLENDER_VERSION: ${{ inputs.blender_version || '5.2.0' }}
-      RELEASE_TAG: ${{ inputs.release_tag || 'blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-v3' }}
+      RELEASE_TAG: ${{ inputs.release_tag || 'blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-v4' }}
       RUNTIME_PROFILE: ${{ inputs.runtime_profile || 'standard' }}
+      RUNTIME_ASSET_FLAVOR: lean-v4
       OPTIX_HEADERS_COMMIT: df7390b16bce5244b7352ca6d3e320f838297072
       REFERENCE_SAFE_BYTES: "244199308"
       PROTECTED_STANDARD_RELEASE_TAG: blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-v3
+      PROTECTED_AUDIO_RELEASE_TAG: blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v1
     steps:
       - name: Check out release repo
         uses: actions/checkout@v4
@@ -49,12 +52,29 @@ jobs:
       - name: Resolve build profile and protect release identity
         run: |
           set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            for protected_tag in \
+              "${PROTECTED_STANDARD_RELEASE_TAG}" \
+              "${PROTECTED_AUDIO_RELEASE_TAG}"; do
+              if [[ "${RELEASE_TAG}" == "${protected_tag}" ]]; then
+                echo "Refusing to overwrite protected release tag: ${RELEASE_TAG}" >&2
+                exit 1
+              fi
+            done
+
+            existing_tag="$(git ls-remote --tags origin "refs/tags/${RELEASE_TAG}")"
+            if [[ -n "${existing_tag}" ]]; then
+              echo "Refusing to overwrite existing release tag: ${RELEASE_TAG}" >&2
+              exit 1
+            fi
+          fi
+
           case "${RUNTIME_PROFILE}" in
             standard)
               cmake_profile="${GITHUB_WORKSPACE}/blender-cycles-headless-rtx.cmake"
-              asset_suffix=""
+              asset_suffix="-${RUNTIME_ASSET_FLAVOR}"
               expect_audio="0"
-              release_name="Blender ${BLENDER_VERSION} cycles headless RTX + OSL runtime"
+              release_name="Blender ${BLENDER_VERSION} lean cycles headless RTX + OSL runtime"
               if [[ "${RELEASE_TAG}" == *audio* ]]; then
                 echo "Standard builds may not publish to an audio release tag: ${RELEASE_TAG}" >&2
                 exit 1
@@ -62,9 +82,9 @@ jobs:
               ;;
             audio)
               cmake_profile="${GITHUB_WORKSPACE}/blender-cycles-headless-rtx-audio.cmake"
-              asset_suffix="-audio"
+              asset_suffix="-audio-${RUNTIME_ASSET_FLAVOR}"
               expect_audio="1"
-              release_name="Blender ${BLENDER_VERSION} cycles headless RTX + OSL + Audio runtime"
+              release_name="Blender ${BLENDER_VERSION} lean cycles headless RTX + OSL + Audio runtime"
               if [[ "${RELEASE_TAG}" == "${PROTECTED_STANDARD_RELEASE_TAG}" || "${RELEASE_TAG}" != *audio* ]]; then
                 echo "Audio builds require a distinct release tag containing 'audio'; refusing ${RELEASE_TAG}." >&2
                 exit 1
@@ -91,6 +111,7 @@ jobs:
             git \
             git-lfs \
             ca-certificates \
+            binutils \
             cmake \
             curl \
             ninja-build \
@@ -141,8 +162,26 @@ jobs:
             build/CMakeCache.txt
           grep -q '^WITH_CYCLES_DEVICE_OPTIX:BOOL=ON$' build/CMakeCache.txt
           grep -q '^WITH_CYCLES_OSL:BOOL=ON$' build/CMakeCache.txt
+          grep -q '^WITH_CYCLES_EMBREE:BOOL=OFF$' build/CMakeCache.txt
           grep -q '^WITH_CODEC_FFMPEG:BOOL=ON$' build/CMakeCache.txt
           grep -q '^WITH_OPENGL_BACKEND:BOOL=ON$' build/CMakeCache.txt
+          for retained_render_feature in OPENIMAGEDENOISE OPENIMAGEIO OPENCOLORIO OPENVDB; do
+            grep -q "^WITH_${retained_render_feature}:BOOL=ON$" build/CMakeCache.txt
+          done
+          for disabled_runtime_feature in \
+            USD \
+            MATERIALX \
+            HYDRA \
+            DRACO \
+            CYCLES_DEVICE_HIP \
+            CYCLES_HIP_BINARIES \
+            CYCLES_DEVICE_HIPRT \
+            CYCLES_DEVICE_ONEAPI \
+            CYCLES_ONEAPI_BINARIES \
+            GHOST_SDL \
+            VULKAN_BACKEND; do
+            grep -q "^WITH_${disabled_runtime_feature}:BOOL=OFF$" build/CMakeCache.txt
+          done
           if [[ "${EXPECT_AUDIO}" == "1" ]]; then
             grep -q '^WITH_AUDASPACE:BOOL=ON$' build/CMakeCache.txt
             grep -q '^WITH_CODEC_SNDFILE:BOOL=ON$' build/CMakeCache.txt
@@ -211,6 +250,7 @@ jobs:
 
           TRIM_PROFILE=farm-nvidia \
             "${GITHUB_WORKSPACE}/trim_blender_runtime_tree.sh" "$base_root"
+          "${GITHUB_WORKSPACE}/verify_blender_runtime_tree.sh" "$base_root"
 
           package_variant() {
             local label="$1"
@@ -298,6 +338,8 @@ jobs:
           scene.cycles.device = "CPU"
           scene.cycles.shading_system = True
           scene.cycles.samples = 4
+          scene.cycles.use_denoising = True
+          scene.cycles.denoiser = "OPENIMAGEDENOISE"
           scene.render.resolution_x = 128
           scene.render.resolution_y = 128
           scene.render.filepath = "//smoke/out.png"
@@ -370,7 +412,7 @@ jobs:
           delta = new_bytes - reference_bytes
           percent = (delta / reference_bytes * 100.0) if reference_bytes else 0.0
           print(f"Runtime profile: {os.environ['RUNTIME_PROFILE']}")
-          print(f"Current FFmpeg v3 safe bytes: {reference_bytes}")
+          print(f"FFmpeg v3 reference safe bytes: {reference_bytes}")
           print(f"New safe bytes: {new_bytes}")
           print(f"Compressed delta bytes: {delta}")
           print(f"Compressed delta percent: {percent:.3f}%")
@@ -385,6 +427,16 @@ jobs:
             dist/**
             smoke/**
 
+      - name: Recheck immutable release target
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          existing_tag="$(git ls-remote --tags origin "refs/tags/${RELEASE_TAG}")"
+          if [[ -n "${existing_tag}" ]]; then
+            echo "Release tag appeared while the build was running; refusing to overwrite it: ${RELEASE_TAG}" >&2
+            exit 1
+          fi
+
       - name: Publish release assets
         if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
@@ -392,7 +444,7 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_NAME }}
           make_latest: false
-          overwrite_files: true
+          overwrite_files: false
           files: |
             dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl*.tar.xz
             dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl*.tar.xz.sha256
