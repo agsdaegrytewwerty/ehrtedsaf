@@ -2,9 +2,12 @@ name: Build Blender Cycles Runtime
 
 on:
   push:
+    branches:
+      - main
     paths:
       - ".github/workflows/build-blender-cycles-runtime.yml"
       - "blender-cycles-headless-rtx.cmake"
+      - "blender-cycles-headless-rtx-audio.cmake"
       - "trim_blender_runtime_tree.sh"
       - "README.md"
   workflow_dispatch:
@@ -17,6 +20,14 @@ on:
         description: Release tag to publish
         required: false
         default: "blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-v3"
+      runtime_profile:
+        description: Runtime feature profile
+        required: false
+        type: choice
+        options:
+          - standard
+          - audio
+        default: standard
 
 permissions:
   contents: write
@@ -27,11 +38,50 @@ jobs:
     env:
       BLENDER_VERSION: ${{ inputs.blender_version || '5.2.0' }}
       RELEASE_TAG: ${{ inputs.release_tag || 'blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-v3' }}
+      RUNTIME_PROFILE: ${{ inputs.runtime_profile || 'standard' }}
       OPTIX_HEADERS_COMMIT: df7390b16bce5244b7352ca6d3e320f838297072
-      PREVIOUS_TRIM2_BYTES: "185782456"
+      REFERENCE_SAFE_BYTES: "244199308"
+      PROTECTED_STANDARD_RELEASE_TAG: blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-v3
     steps:
       - name: Check out release repo
         uses: actions/checkout@v4
+
+      - name: Resolve build profile and protect release identity
+        run: |
+          set -euo pipefail
+          case "${RUNTIME_PROFILE}" in
+            standard)
+              cmake_profile="${GITHUB_WORKSPACE}/blender-cycles-headless-rtx.cmake"
+              asset_suffix=""
+              expect_audio="0"
+              release_name="Blender ${BLENDER_VERSION} cycles headless RTX + OSL runtime"
+              if [[ "${RELEASE_TAG}" == *audio* ]]; then
+                echo "Standard builds may not publish to an audio release tag: ${RELEASE_TAG}" >&2
+                exit 1
+              fi
+              ;;
+            audio)
+              cmake_profile="${GITHUB_WORKSPACE}/blender-cycles-headless-rtx-audio.cmake"
+              asset_suffix="-audio"
+              expect_audio="1"
+              release_name="Blender ${BLENDER_VERSION} cycles headless RTX + OSL + Audio runtime"
+              if [[ "${RELEASE_TAG}" == "${PROTECTED_STANDARD_RELEASE_TAG}" || "${RELEASE_TAG}" != *audio* ]]; then
+                echo "Audio builds require a distinct release tag containing 'audio'; refusing ${RELEASE_TAG}." >&2
+                exit 1
+              fi
+              ;;
+            *)
+              echo "Unsupported runtime profile: ${RUNTIME_PROFILE}" >&2
+              exit 1
+              ;;
+          esac
+          test -f "${cmake_profile}"
+          {
+            echo "CMAKE_PROFILE=${cmake_profile}"
+            echo "ASSET_SUFFIX=${asset_suffix}"
+            echo "EXPECT_AUDIO=${expect_audio}"
+            echo "RELEASE_NAME=${release_name}"
+          } >> "${GITHUB_ENV}"
 
       - name: Install build tools
         run: |
@@ -45,6 +95,7 @@ jobs:
             curl \
             ninja-build \
             clang-18 \
+            ffmpeg \
             libegl-dev \
             lld-18 \
             ripgrep \
@@ -79,7 +130,7 @@ jobs:
         run: |
           set -euxo pipefail
           cmake -S blender-src -B build -G Ninja \
-            -C "${GITHUB_WORKSPACE}/blender-cycles-headless-rtx.cmake" \
+            -C "${CMAKE_PROFILE}" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER="${CC}" \
             -DCMAKE_CXX_COMPILER="${CXX}" \
@@ -92,6 +143,17 @@ jobs:
           grep -q '^WITH_CYCLES_OSL:BOOL=ON$' build/CMakeCache.txt
           grep -q '^WITH_CODEC_FFMPEG:BOOL=ON$' build/CMakeCache.txt
           grep -q '^WITH_OPENGL_BACKEND:BOOL=ON$' build/CMakeCache.txt
+          if [[ "${EXPECT_AUDIO}" == "1" ]]; then
+            grep -q '^WITH_AUDASPACE:BOOL=ON$' build/CMakeCache.txt
+            grep -q '^WITH_CODEC_SNDFILE:BOOL=ON$' build/CMakeCache.txt
+            grep -q '^WITH_RUBBERBAND:BOOL=ON$' build/CMakeCache.txt
+          else
+            grep -q '^WITH_AUDASPACE:BOOL=OFF$' build/CMakeCache.txt
+            grep -q '^WITH_CODEC_SNDFILE:BOOL=OFF$' build/CMakeCache.txt
+          fi
+          for disabled_audio_backend in JACK OPENAL PULSEAUDIO PIPEWIRE SDL_AUDIO; do
+            grep -q "^WITH_${disabled_audio_backend}:BOOL=OFF$" build/CMakeCache.txt
+          done
 
       - name: Build and install
         run: |
@@ -106,7 +168,7 @@ jobs:
           version="${BLENDER_VERSION}"
           series="${version%.*}"
           stage_dir="blender-${version}-linux-x64"
-          asset_prefix="blender-${version}-linux-x64-cycles-headless-rtx-osl"
+          asset_prefix="blender-${version}-linux-x64-cycles-headless-rtx-osl${ASSET_SUFFIX}"
           base_root="dist/base/${stage_dir}"
 
           rm -rf dist
@@ -212,6 +274,7 @@ jobs:
 
           {
             echo "STAGE_DIR=${stage_dir}"
+            echo "ASSET_PREFIX=${asset_prefix}"
             echo "SAFE_ASSET_NAME=${asset_prefix}-safe.tar.xz"
           } >> "$GITHUB_ENV"
 
@@ -221,7 +284,15 @@ jobs:
           mkdir -p smoke
           cat > smoke/smoke_render.py <<'PY'
           import bpy
+          import math
+          import os
+          import struct
+          import wave
+
+          expect_audio = os.environ.get("EXPECT_AUDIO") == "1"
           assert bpy.app.build_options.codec_ffmpeg, "Blender runtime was built without FFmpeg"
+          assert bool(bpy.app.build_options.audaspace) is expect_audio, bpy.app.build_options
+          assert bool(bpy.app.build_options.codec_sndfile) is expect_audio, bpy.app.build_options
           scene = bpy.context.scene
           scene.render.engine = "CYCLES"
           scene.cycles.device = "CPU"
@@ -237,9 +308,54 @@ jobs:
           bpy.ops.object.camera_add(location=(4.0, -4.0, 3.0), rotation=(1.1, 0.0, 0.8))
           scene.camera = bpy.context.object
           bpy.ops.render.render(write_still=True)
+
+          if expect_audio:
+              sample_rate = 48_000
+              duration_seconds = 2
+              source_path = os.path.abspath("smoke/tone.wav")
+              mixdown_path = os.path.abspath("smoke/mixdown.flac")
+              frames = bytearray()
+              for sample_index in range(sample_rate * duration_seconds):
+                  value = int(0.25 * 32767 * math.sin(2.0 * math.pi * 440.0 * sample_index / sample_rate))
+                  frames.extend(struct.pack("<h", value))
+              with wave.open(source_path, "wb") as output:
+                  output.setnchannels(1)
+                  output.setsampwidth(2)
+                  output.setframerate(sample_rate)
+                  output.writeframes(frames)
+
+              scene.render.fps = 24
+              scene.render.fps_base = 1.0
+              scene.frame_start = 1
+              scene.frame_end = 48
+              sequence_editor = scene.sequence_editor_create()
+              sequence_editor.strips.new_sound(
+                  name="Audio smoke tone",
+                  filepath=source_path,
+                  channel=1,
+                  frame_start=1,
+              )
+              result = bpy.ops.sound.mixdown(
+                  filepath=mixdown_path,
+                  check_existing=False,
+                  container="FLAC",
+                  codec="FLAC",
+                  channels="STEREO",
+                  format="S16",
+                  mixrate=sample_rate,
+              )
+              assert result == {"FINISHED"}, result
           PY
           "./dist/base/${STAGE_DIR}/blender" --background --factory-startup --python smoke/smoke_render.py
           test -s smoke/out.png
+          if [[ "${EXPECT_AUDIO}" == "1" ]]; then
+            test -s smoke/mixdown.flac
+            test "$(ffprobe -v error -select_streams a:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 smoke/mixdown.flac)" = "flac"
+            test "$(ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate -of default=noprint_wrappers=1:nokey=1 smoke/mixdown.flac)" = "48000"
+            test "$(ffprobe -v error -select_streams a:0 -show_entries stream=channels -of default=noprint_wrappers=1:nokey=1 smoke/mixdown.flac)" = "2"
+            ffmpeg -v error -i smoke/mixdown.flac -f s16le -acodec pcm_s16le - \
+              | python3 -c 'import sys; payload = sys.stdin.buffer.read(); assert payload and any(payload), "mixdown decoded to silence"'
+          fi
 
       - name: Build summary
         run: |
@@ -250,55 +366,38 @@ jobs:
 
           asset_name = os.environ["SAFE_ASSET_NAME"]
           new_bytes = int(pathlib.Path(f"dist/{asset_name}.bytes").read_text().strip())
-          old_bytes = int(os.environ["PREVIOUS_TRIM2_BYTES"])
-          saved = old_bytes - new_bytes
-          percent = (saved / old_bytes * 100.0) if old_bytes else 0.0
-          print(f"Previous trim2 bytes: {old_bytes}")
-          print(f"New source-build safe bytes: {new_bytes}")
-          print(f"Delta bytes: {saved}")
-          print(f"Delta percent: {percent:.3f}%")
+          reference_bytes = int(os.environ["REFERENCE_SAFE_BYTES"])
+          delta = new_bytes - reference_bytes
+          percent = (delta / reference_bytes * 100.0) if reference_bytes else 0.0
+          print(f"Runtime profile: {os.environ['RUNTIME_PROFILE']}")
+          print(f"Current FFmpeg v3 safe bytes: {reference_bytes}")
+          print(f"New safe bytes: {new_bytes}")
+          print(f"Compressed delta bytes: {delta}")
+          print(f"Compressed delta percent: {percent:.3f}%")
           PY
           cat dist/build-summary.txt >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: blender-cycles-runtime-${{ env.BLENDER_VERSION }}
+          name: blender-cycles-runtime-${{ env.BLENDER_VERSION }}-${{ env.RUNTIME_PROFILE }}
           path: |
             dist/**
-            smoke/out.png
+            smoke/**
 
       - name: Publish release assets
+        if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          name: Blender ${{ env.BLENDER_VERSION }} cycles headless RTX + OSL runtime
+          name: ${{ env.RELEASE_NAME }}
+          make_latest: false
           overwrite_files: true
           files: |
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl.tar.xz
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl.tar.xz.sha256
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl.tar.xz.bytes
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl.tar.xz.du
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-safe.tar.xz
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-safe.tar.xz.sha256
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-safe.tar.xz.bytes
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-safe.tar.xz.du
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm75.tar.xz
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm75.tar.xz.sha256
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm75.tar.xz.bytes
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm75.tar.xz.du
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm86.tar.xz
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm86.tar.xz.sha256
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm86.tar.xz.bytes
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm86.tar.xz.du
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm89.tar.xz
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm89.tar.xz.sha256
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm89.tar.xz.bytes
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm89.tar.xz.du
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm120.tar.xz
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm120.tar.xz.sha256
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm120.tar.xz.bytes
-            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl-sm120.tar.xz.du
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl*.tar.xz
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl*.tar.xz.sha256
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl*.tar.xz.bytes
+            dist/blender-${{ env.BLENDER_VERSION }}-linux-x64-cycles-headless-rtx-osl*.tar.xz.du
             dist/release-assets.json
             dist/build-summary.txt
         env:

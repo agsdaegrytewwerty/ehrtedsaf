@@ -11,7 +11,7 @@ YesterdayRender Cycles GPU pools:
 - FFmpeg enabled for video-backed image textures
 - headless EGL/OpenGL context support for GPU-composited scenes
 - no oneAPI/HIP backends
-- no windowing/audio stack
+- no windowing or desktop audio playback stack
 - no USD/Hydra/MaterialX
 
 Current default build: Blender 5.2.0.
@@ -29,3 +29,13 @@ Workflow:
 Build profile:
 
 - `blender-cycles-headless-rtx.cmake`
+
+An opt-in `audio` workflow profile uses
+`blender-cycles-headless-rtx-audio.cmake`. It retains the standard runtime's
+rendering features while enabling Audaspace, libsndfile, Rubber Band, and the
+already-present FFmpeg codec support for background scene mixdown. OpenAL,
+JACK, PulseAudio, PipeWire, and SDL playback remain disabled.
+
+Audio releases use distinct `-audio` asset names and require a release tag
+containing `audio`. Release publication only occurs for manual workflow
+dispatches, so branch pushes cannot replace an existing release.
