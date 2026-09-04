@@ -1,0 +1,118 @@
+name: Build EEVEE WSL D3D12 Runtime
+
+on:
+  push:
+    paths:
+      - ".github/workflows/build-eevee-wsl-d3d12-runtime.yml"
+      - "scripts/package_eevee_wsl_d3d12_runtime.sh"
+      - "scripts/renderboost_eevee_wsl_d3d12_exact_fallback.sh"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag to publish
+        required: false
+        default: "eevee-wsl-d3d12-runtime-v1"
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Package Windows driver ${{ matrix.driver_version }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        driver_version:
+          - "610.74"
+          - "610.62"
+          - "591.86"
+          - "610.88"
+          - "610.47"
+          - "595.79"
+          - "596.36"
+    steps:
+      - name: Check out release repo
+        uses: actions/checkout@v4
+
+      - name: Install extraction tools
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends p7zip-full unzip xz-utils
+
+      - name: Build and verify exact-driver archive
+        run: |
+          set -euxo pipefail
+          scripts/package_eevee_wsl_d3d12_runtime.sh "${{ matrix.driver_version }}" dist
+
+      - name: Upload packaged archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: eevee-wsl-d3d12-${{ matrix.driver_version }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish runtime release
+    needs: package
+    runs-on: ubuntu-24.04
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || 'eevee-wsl-d3d12-runtime-v1' }}
+    steps:
+      - name: Check out release repo
+        uses: actions/checkout@v4
+
+      - name: Download packaged archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: eevee-wsl-d3d12-*
+          path: dist
+          merge-multiple: true
+
+      - name: Add fallback and aggregate manifest
+        run: |
+          set -euxo pipefail
+          fallback="dist/renderboost-eevee-wsl-d3d12-exact-driver-fallback.sh"
+          cp scripts/renderboost_eevee_wsl_d3d12_exact_fallback.sh "$fallback"
+          chmod +x "$fallback"
+          sha256sum "$fallback" >"${fallback}.sha256"
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          dist = Path("dist")
+          assets = {}
+          for path in sorted([*dist.glob("*.tar.xz"), *dist.glob("*.sh")]):
+              assets[path.name] = {
+                  "bytes": path.stat().st_size,
+                  "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+              }
+          (dist / "release-assets.json").write_text(
+              json.dumps(assets, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          ls -lh dist
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: RenderBoost EEVEE WSL/D3D12 runtime v1
+          overwrite_files: true
+          body: |
+            Complete EEVEE-on-GPU support files for Windows-backed WSL2 workers using Mesa's D3D12 Gallium driver.
+
+            The seven exact Windows NVIDIA host-driver archives (`610.74`, `610.62`, `591.86`, `610.88`, `610.47`, `595.79`, and `596.36`) cover 87.037% of RenderBoost's retained 4,181-worker sample. Never use a nearest-version archive: both `host_driver_version` and `host_libcuda_sha256` in `METADATA.json` must match. The fallback downloads an exact official package for an unlisted version and refuses it unless its `libcuda.so.1.1` matches the worker-mounted host library.
+
+            Each archive contains pinned Microsoft D3D12/DXCore libraries, exact-driver NVIDIA graphics/compiler libraries, license/provenance files, source hashes, and per-file checksums. Mesa remains an OS package and is intentionally not bundled.
+
+            Install `driver/libnvidia-gpucomp.so` at `/usr/lib/wsl/lib/libnvidia-gpucomp.so`. Install `driver/libnvwgf2umx.so` beside the matching mounted `libcuda.so.1.1` under `/usr/lib/wsl/drivers`. Put the archive's `lib` directory first in `LD_LIBRARY_PATH`, select Mesa `GALLIUM_DRIVER=d3d12`, and do not set `LD_PRELOAD`.
+
+            Canary validation: the `596.36` contents passed nine independent real Pip EEVEE frame renders plus two OptiX and two CUDA processes (13/13) on a Salad 16 GB RTX 4080 SUPER worker. EEVEE identified `D3D12 (NVIDIA GeForce RTX 4080 SUPER)` and GPU memory returned to baseline after every process. The other variants are reproducibly extracted from the corresponding official NVIDIA package but were not live-GPU tested in that canary.
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
