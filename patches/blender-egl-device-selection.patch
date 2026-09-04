@@ -1,0 +1,206 @@
+--- a/intern/ghost/intern/GHOST_ContextEGL.cc
++++ b/intern/ghost/intern/GHOST_ContextEGL.cc
+@@ -18,6 +18,23 @@
+ #include <cstdio>
+ #include <cstring>
+ 
++#include <cstdlib>
++
++#ifndef EGL_PLATFORM_DEVICE_EXT
++#  define EGL_PLATFORM_DEVICE_EXT 0x313F
++#endif
++
++#ifndef EGL_EXT_device_base
++typedef void *EGLDeviceEXT;
++#endif
++
++using GHOST_eglQueryDevicesEXT_t = EGLBoolean (*)(EGLint max_devices,
++                                                  EGLDeviceEXT *devices,
++                                                  EGLint *num_devices);
++using GHOST_eglGetPlatformDisplayEXT_t = EGLDisplay (*)(EGLenum platform,
++                                                       void *native_display,
++                                                       const EGLint *attrib_list);
++
+ #define CASE_CODE_RETURN_STR(code) \
+   case code: \
+     return #code;
+@@ -347,48 +364,128 @@
+   EGLContext prev_context = eglGetCurrentContext();
+ 
+   EGLint egl_major = 0, egl_minor = 0;
++  int selected_device_index = -1;
++  EGLint num_devices = 0;
++  bool use_egl_device_mode = false;
+ 
+-  if (!EGL_CHK((display_ = ::eglGetDisplay(native_display_)) != EGL_NO_DISPLAY)) {
+-    goto error;
+-  }
++  const char *device_index_env = ::getenv("BLENDER_EGL_DEVICE_INDEX");
++  const char *egl_platform_env = ::getenv("EGL_PLATFORM");
++  const bool request_device_platform = (egl_platform_env != nullptr &&
++                                        ::strcmp(egl_platform_env, "device") == 0);
++  use_egl_device_mode = (device_index_env != nullptr || request_device_platform);
+ 
+-  {
+-    const EGLBoolean init_display_result = ::eglInitialize(display_, &egl_major, &egl_minor);
+-    const EGLint init_display_error = (init_display_result) ? 0 : eglGetError();
++  if (use_egl_device_mode) {
++    GHOST_eglQueryDevicesEXT_t query_devices_fn =
++        reinterpret_cast<GHOST_eglQueryDevicesEXT_t>(::eglGetProcAddress("eglQueryDevicesEXT"));
++    GHOST_eglGetPlatformDisplayEXT_t get_platform_display_fn =
++        reinterpret_cast<GHOST_eglGetPlatformDisplayEXT_t>(::eglGetProcAddress("eglGetPlatformDisplayEXT"));
++    if (get_platform_display_fn == nullptr) {
++      get_platform_display_fn =
++          reinterpret_cast<GHOST_eglGetPlatformDisplayEXT_t>(::eglGetProcAddress("eglGetPlatformDisplay"));
++    }
+ 
+-    if (!init_display_result || (egl_major == 0 && egl_minor == 0)) {
+-      /* We failed to create a regular render window, retry and see if we can create a headless
+-       * render context. */
+-      ::eglTerminate(display_);
++    if (query_devices_fn == nullptr) {
++      ::fprintf(stderr,
++                "EGL Device mode requested, but eglGetProcAddress(\"eglQueryDevicesEXT\") failed\n");
++      goto error;
++    }
++    if (get_platform_display_fn == nullptr) {
++      ::fprintf(stderr,
++                "EGL Device mode requested, but eglGetProcAddress(\"eglGetPlatformDisplayEXT\") failed\n");
++      goto error;
++    }
+ 
+-      const char *egl_extension_st = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
+-      assert(egl_extension_st != nullptr);
+-      assert(egl_extension_st == nullptr ||
+-             strstr(egl_extension_st, "EGL_MESA_platform_surfaceless") != nullptr);
+-      if (egl_extension_st == nullptr ||
+-          strstr(egl_extension_st, "EGL_MESA_platform_surfaceless") == nullptr)
+-      {
+-        egl_print_error("Failed to create display GPU context: ", init_display_error);
+-        fprintf(
+-            stderr,
+-            "Failed to create headless GPU context: No EGL_MESA_platform_surfaceless extension");
+-        goto error;
+-      }
++    if (!query_devices_fn(0, nullptr, &num_devices) || num_devices <= 0) {
++      ::fprintf(stderr, "eglQueryDevicesEXT reported 0 available EGL devices\n");
++      goto error;
++    }
+ 
+-      display_ = eglGetPlatformDisplayEXT(
+-          EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, nullptr);
++    std::vector<EGLDeviceEXT> devices(num_devices);
++    if (!query_devices_fn(num_devices, devices.data(), &num_devices) || num_devices <= 0) {
++      ::fprintf(stderr, "Failed to enumerate EGL devices via eglQueryDevicesEXT\n");
++      goto error;
++    }
+ 
+-      const EGLBoolean headless_result = ::eglInitialize(display_, &egl_major, &egl_minor);
+-      const EGLint init_headless_error = (headless_result) ? 0 : eglGetError();
+-
+-      if (!headless_result) {
+-        egl_print_error("Failed to create display GPU context: ", init_display_error);
+-        egl_print_error("Failed to create headless GPU context: ", init_headless_error);
++    if (device_index_env != nullptr && device_index_env[0] != '\0') {
++      char *endptr = nullptr;
++      long val = ::strtol(device_index_env, &endptr, 10);
++      if (endptr == device_index_env || (endptr != nullptr && *endptr != '\0') || val < 0 || val >= num_devices) {
++        ::fprintf(stderr,
++                  "Invalid BLENDER_EGL_DEVICE_INDEX=\"%s\" (found %d visible EGL device(s))\n",
++                  device_index_env,
++                  num_devices);
+         goto error;
+       }
++      selected_device_index = static_cast<int>(val);
+     }
++    else {
++      if (num_devices == 1) {
++        selected_device_index = 0;
++      }
++      else {
++        ::fprintf(stderr,
++                  "Multiple EGL devices visible (%d) but BLENDER_EGL_DEVICE_INDEX is not set. "
++                  "Refusing ambiguous GPU selection.\n",
++                  num_devices);
++        goto error;
++      }
++    }
++
++    display_ = get_platform_display_fn(EGL_PLATFORM_DEVICE_EXT, devices[selected_device_index], nullptr);
++    if (display_ == EGL_NO_DISPLAY) {
++      ::fprintf(stderr, "eglGetPlatformDisplayEXT failed for EGL device index %d\n", selected_device_index);
++      goto error;
++    }
++
++    if (!::eglInitialize(display_, &egl_major, &egl_minor)) {
++      const EGLint init_err = ::eglGetError();
++      egl_print_error("eglInitialize failed on EGL device: ", init_err);
++      goto error;
++    }
+   }
++  else {
++    if (!EGL_CHK((display_ = ::eglGetDisplay(native_display_)) != EGL_NO_DISPLAY)) {
++      goto error;
++    }
+ 
++    {
++      const EGLBoolean init_display_result = ::eglInitialize(display_, &egl_major, &egl_minor);
++      const EGLint init_display_error = (init_display_result) ? 0 : eglGetError();
++
++      if (!init_display_result || (egl_major == 0 && egl_minor == 0)) {
++        /* We failed to create a regular render window, retry and see if we can create a headless
++         * render context. */
++        ::eglTerminate(display_);
++
++        const char *egl_extension_st = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
++        assert(egl_extension_st != nullptr);
++        assert(egl_extension_st == nullptr ||
++               strstr(egl_extension_st, "EGL_MESA_platform_surfaceless") != nullptr);
++        if (egl_extension_st == nullptr ||
++            strstr(egl_extension_st, "EGL_MESA_platform_surfaceless") == nullptr)
++        {
++          egl_print_error("Failed to create display GPU context: ", init_display_error);
++          fprintf(
++              stderr,
++              "Failed to create headless GPU context: No EGL_MESA_platform_surfaceless extension");
++          goto error;
++        }
++
++        display_ = eglGetPlatformDisplayEXT(
++            EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, nullptr);
++
++        const EGLBoolean headless_result = ::eglInitialize(display_, &egl_major, &egl_minor);
++        const EGLint init_headless_error = (headless_result) ? 0 : eglGetError();
++
++        if (!headless_result) {
++          egl_print_error("Failed to create display GPU context: ", init_display_error);
++          egl_print_error("Failed to create headless GPU context: ", init_headless_error);
++          goto error;
++        }
++      }
++    }
++  }
++
+ #ifdef WITH_GHOST_DEBUG
+   fprintf(stderr, "EGL Version %d.%d\n", egl_major, egl_minor);
+ #endif
+@@ -622,6 +719,19 @@
+ 
+   if (!EGL_CHK(::eglMakeCurrent(display_, surface_, surface_, context_))) {
+     goto error;
++  }
++
++  if (use_egl_device_mode) {
++    const char *gl_vendor = reinterpret_cast<const char *>(::glGetString(GL_VENDOR));
++    const char *gl_renderer = reinterpret_cast<const char *>(::glGetString(GL_RENDERER));
++    const char *gl_version = reinterpret_cast<const char *>(::glGetString(GL_VERSION));
++    ::fprintf(stderr,
++              "[GHOST/EGL] Selected EGL device %d of %d: backend=OpenGL, vendor=%s, renderer=%s, version=%s\n",
++              selected_device_index,
++              num_devices,
++              gl_vendor ? gl_vendor : "unknown",
++              gl_renderer ? gl_renderer : "unknown",
++              gl_version ? gl_version : "unknown");
+   }
+ 
+   {

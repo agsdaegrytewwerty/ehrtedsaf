@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/build-blender-cycles-runtime.yml"
       - "blender-cycles-headless-rtx.cmake"
+      - "patches/**"
       - "trim_blender_runtime_tree.sh"
       - "README.md"
   workflow_dispatch:
@@ -59,6 +60,11 @@ jobs:
           git lfs install --local
           git lfs pull --include="release/datafiles/startup.blend" --exclude=""
           python3 build_files/utils/make_update.py --no-blender
+
+      - name: Apply Blender EGL device selection patch
+        run: |
+          set -euxo pipefail
+          git -C blender-src apply "${GITHUB_WORKSPACE}/patches/blender-egl-device-selection.patch"
 
       - name: Fetch NVIDIA OptiX 8 headers
         run: |
