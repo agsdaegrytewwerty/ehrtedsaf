@@ -1,12 +1,7 @@
-name: Build and Push Worker Base Image
+name: Build and Push Worker Images
 
 on:
   workflow_dispatch:
-    inputs:
-      image_tag:
-        description: "Image tag to publish (default: v1)"
-        required: false
-        default: "v1"
   push:
     branches:
       - main
@@ -22,6 +17,35 @@ permissions:
 jobs:
   build-and-push:
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: sm86
+            url: "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2/blender-5.2.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v4-sm86.tar.xz"
+            artifact_id: "blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2:51b560e12d6b759a895a8ef3a1161c74a1e83e55d537845463ccb707b1a34e5c"
+            tag: "sm86"
+          - variant: sm89
+            url: "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2/blender-5.2.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v4-sm89.tar.xz"
+            artifact_id: "blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2:a5f79d0e6b13a0474c5a2ad64eb38b515d6929948deca1864d81bc0946915878"
+            tag: "sm89"
+          - variant: sm75
+            url: "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2/blender-5.2.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v4-sm75.tar.xz"
+            artifact_id: "blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2:b2c15a5ffe19573a1716f666ae96390ba993be34c04b452185c149263a83c8fb"
+            tag: "sm75"
+          - variant: sm120
+            url: "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2/blender-5.2.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v4-sm120.tar.xz"
+            artifact_id: "blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2:086a14ce4cd79588d665aad03cb98e737a50db158e3086ed79aa167eb8b1bbb5"
+            tag: "sm120"
+          - variant: safe
+            url: "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2/blender-5.2.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v4-safe.tar.xz"
+            artifact_id: ""
+            tag: "safe"
+          - variant: base
+            url: ""
+            artifact_id: ""
+            tag: "base"
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -36,14 +60,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate Docker tags and metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository_owner }}/renderboost-base-worker
-          tags: |
-            type=raw,value=${{ github.event.inputs.image_tag || 'v1' }}
-            type=raw,value=latest
+      - name: Configure image tags
+        id: tags
+        run: |
+          IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/renderboost-worker"
+          TAGS="${IMAGE_NAME}:${{ matrix.tag }}"
+          if [ "${{ matrix.variant }}" = "sm86" ]; then
+            TAGS="${TAGS},${IMAGE_NAME}:latest"
+          fi
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push image
         uses: docker/build-push-action@v5
@@ -52,7 +77,10 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ steps.tags.outputs.tags }}
+          build-args: |
+            BLENDER_VARIANT=${{ matrix.variant }}
+            BLENDER_URL=${{ matrix.url }}
+            BLENDER_ARTIFACT_ID=${{ matrix.artifact_id }}
+          cache-from: type=gha,scope=${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
