@@ -26,10 +26,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libegl1 \
         libopengl0 \
         libgbm1 \
+        libglu1-mesa \
+        # Blender shared library runtime dependencies
+        libatomic1 \
+        libsm6 \
+        libice6 \
+        libx11-6 \
+        libxext6 \
+        libxrender1 \
+        libxi6 \
+        libxxf86vm1 \
+        libxfixes3 \
+        libxrandr2 \
+        libxcursor1 \
+        libxinerama1 \
+        libxkbcommon0 \
+        libfontconfig1 \
+        libfreetype6 \
+        libsndfile1 \
+        libpulse0 \
         # Media and transcoding
         ffmpeg \
         # System utilities and archiving
-        curl \
         zip \
         unzip \
         xz-utils \
