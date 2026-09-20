@@ -23,28 +23,28 @@ jobs:
         include:
           - variant: sm86
             url: "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2/blender-5.2.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v4-sm86.tar.xz"
+            sha256: "51b560e12d6b759a895a8ef3a1161c74a1e83e55d537845463ccb707b1a34e5c"
             artifact_id: "blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2:51b560e12d6b759a895a8ef3a1161c74a1e83e55d537845463ccb707b1a34e5c"
-            tag: "sm86"
           - variant: sm89
             url: "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2/blender-5.2.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v4-sm89.tar.xz"
+            sha256: "a5f79d0e6b13a0474c5a2ad64eb38b515d6929948deca1864d81bc0946915878"
             artifact_id: "blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2:a5f79d0e6b13a0474c5a2ad64eb38b515d6929948deca1864d81bc0946915878"
-            tag: "sm89"
           - variant: sm75
             url: "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2/blender-5.2.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v4-sm75.tar.xz"
+            sha256: "b2c15a5ffe19573a1716f666ae96390ba993be34c04b452185c149263a83c8fb"
             artifact_id: "blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2:b2c15a5ffe19573a1716f666ae96390ba993be34c04b452185c149263a83c8fb"
-            tag: "sm75"
           - variant: sm120
             url: "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2/blender-5.2.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v4-sm120.tar.xz"
+            sha256: "086a14ce4cd79588d665aad03cb98e737a50db158e3086ed79aa167eb8b1bbb5"
             artifact_id: "blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2:086a14ce4cd79588d665aad03cb98e737a50db158e3086ed79aa167eb8b1bbb5"
-            tag: "sm120"
           - variant: safe
             url: "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2/blender-5.2.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v4-safe.tar.xz"
-            artifact_id: ""
-            tag: "safe"
+            sha256: "b7fb6011e3a65bbb475bd3c471a75a333548ff9d75c5f10774ffadbc6eb1adb"
+            artifact_id: "blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2:b7fb6011e3a65bbb475bd3c471a75a333548ff9d75c5f10774ffadbc6eb1adb"
           - variant: base
             url: ""
+            sha256: ""
             artifact_id: ""
-            tag: "base"
 
     steps:
       - name: Check out repository
@@ -64,10 +64,7 @@ jobs:
         id: tags
         run: |
           IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/renderboost-worker"
-          TAGS="${IMAGE_NAME}:${{ matrix.tag }}"
-          if [ "${{ matrix.variant }}" = "sm86" ]; then
-            TAGS="${TAGS},${IMAGE_NAME}:latest"
-          fi
+          TAGS="${IMAGE_NAME}:rbdeps-${GITHUB_SHA}-${{ matrix.variant }}"
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push image
@@ -81,6 +78,12 @@ jobs:
           build-args: |
             BLENDER_VARIANT=${{ matrix.variant }}
             BLENDER_URL=${{ matrix.url }}
+            BLENDER_SHA256=${{ matrix.sha256 }}
             BLENDER_ARTIFACT_ID=${{ matrix.artifact_id }}
+            NODE_SHA256=406791658a8bce3bc21fab786f45877adad391ea20badc87e1d65c7478b75062
+            OPENIMAGEIO_WHEEL_SHA256=420a2cbfc7358c281a0902e9daa4ee229e7cb9071be4704ddf8943930c184f78
+            OPENIMAGEIO_WHEEL_BYTES=6918964
           cache-from: type=gha,scope=${{ matrix.variant }}
           cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
+          provenance: false
+          sbom: false

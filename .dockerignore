@@ -1,0 +1,16 @@
+.git
+.github
+.DS_Store
+*.key
+*.pem
+*.p12
+*.pfx
+*.env
+*.env.*
+secrets/
+private/
+node_modules/
+.next/
+dist/
+build/
+tmp/
