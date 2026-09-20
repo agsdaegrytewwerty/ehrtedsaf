@@ -66,7 +66,7 @@ jobs:
           blender_archive="$work_dir/blender-safe.tar.xz"
           decoder_wheel="$work_dir/openimageio.whl"
           run_checked download-blender curl -fsSL "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2/blender-5.2.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v4-safe.tar.xz" -o "$blender_archive"
-          run_checked verify-blender sh -c 'printf "%s  %s\n" "$1" "$2" | sha256sum -c -' sh 'b7fb6011e3a65bbb475bd3c471a75a333548ff9d75c5f10774ffadbc6eb1adb' "$blender_archive"
+          run_checked verify-blender sh -c 'printf "%s  %s\n" "$1" "$2" | sha256sum -c -' sh 'b7fb6011e3a65bbb475bd3c471a75a333548ff9d75c5f10774ffadbc6ebd1adb' "$blender_archive"
           mkdir -p "$work_dir/blender"
           run_checked extract-blender tar -xJf "$blender_archive" -C "$work_dir/blender"
           site_packages="$work_dir/blender/blender-5.2.0-linux-x64/5.2/python/lib/python3.13/site-packages"
@@ -105,8 +105,8 @@ jobs:
             artifact_id: "blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2:086a14ce4cd79588d665aad03cb98e737a50db158e3086ed79aa167eb8b1bbb5"
           - variant: safe
             url: "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2/blender-5.2.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v4-safe.tar.xz"
-            sha256: "b7fb6011e3a65bbb475bd3c471a75a333548ff9d75c5f10774ffadbc6eb1adb"
-            artifact_id: "blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2:b7fb6011e3a65bbb475bd3c471a75a333548ff9d75c5f10774ffadbc6eb1adb"
+            sha256: "b7fb6011e3a65bbb475bd3c471a75a333548ff9d75c5f10774ffadbc6ebd1adb"
+            artifact_id: "blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2:b7fb6011e3a65bbb475bd3c471a75a333548ff9d75c5f10774ffadbc6ebd1adb"
           - variant: base
             url: ""
             sha256: ""
