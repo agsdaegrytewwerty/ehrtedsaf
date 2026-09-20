@@ -109,7 +109,7 @@ RUN set -eu \
         && test -f "$decoder_root/OpenImageIO.cpython-313-x86_64-linux-gnu.so" \
         && test -f "$decoder_root/lib/libOpenImageIO.so.3.1.17" \
         && LD_LIBRARY_PATH="$decoder_root/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-           "$EXTRACTED_DIR/5.2/python/bin/python3.13" -I -c 'import OpenImageIO as oiio, numpy; required = {"openexr", "jpeg", "png", "tiff", "webp"}; formats = set(oiio.getattribute("format_list", oiio.TypeDesc("string")).split(",")); assert required <= formats, (required - formats, oiio.VERSION_STRING); print(oiio.VERSION_STRING)' \
+           "$EXTRACTED_DIR/5.2/python/bin/python3.13" -I -c 'import OpenImageIO as oiio, numpy; required = {"openexr", "jpeg", "png", "tiff", "webp"}; formats = set(oiio.get_string_attribute("format_list").split(",")); assert required <= formats, (required - formats, oiio.VERSION_STRING); print(oiio.VERSION_STRING)' \
         && rm -f "$blender_archive" "$decoder_wheel" \
         && rm -rf /tmp/blender-extract \
         && ln -sf /opt/blender-${BLENDER_VERSION}/blender /usr/local/bin/blender \
