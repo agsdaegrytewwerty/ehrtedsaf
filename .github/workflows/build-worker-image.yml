@@ -13,6 +13,7 @@ on:
 permissions:
   contents: read
   packages: write
+  checks: write
 
 jobs:
   validate-blender-dependencies:
@@ -21,33 +22,54 @@ jobs:
       - name: Validate the pinned Blender Python decoder asset
         run: |
           set -eu
+          publish_diagnostic() {
+            local label="$1"
+            local output="$2"
+            local payload
+            payload="$(jq -n \
+              --arg name "RenderBoost worker decoder preflight ($label)" \
+              --arg head_sha "$GITHUB_SHA" \
+              --arg title "$label" \
+              --arg summary "$output" \
+              '{name: $name, head_sha: $head_sha, status: "completed", conclusion: "failure", output: {title: $title, summary: $summary}}')"
+            curl -fsSL -X POST \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/check-runs" \
+              -d "$payload" >/dev/null || true
+          }
+          run_checked() {
+            local label="$1"
+            shift
+            set +e
+            local output
+            output="$("$@" 2>&1)"
+            local status=$?
+            set -e
+            printf '%s\n' "$output"
+            if [ "$status" -ne 0 ]; then
+              publish_diagnostic "$label" "$output"
+              return "$status"
+            fi
+          }
           work_dir="$(mktemp -d)"
           blender_archive="$work_dir/blender-safe.tar.xz"
           decoder_wheel="$work_dir/openimageio.whl"
-          curl -fsSL "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2/blender-5.2.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v4-safe.tar.xz" -o "$blender_archive"
-          printf '%s  %s\n' "b7fb6011e3a65bbb475bd3c471a75a333548ff9d75c5f10774ffadbc6eb1adb" "$blender_archive" | sha256sum -c -
+          run_checked download-blender curl -fsSL "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2/blender-5.2.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v4-safe.tar.xz" -o "$blender_archive"
+          run_checked verify-blender sh -c "printf '%s  %s\\n' 'b7fb6011e3a65bbb475bd3c471a75a333548ff9d75c5f10774ffadbc6eb1adb' '$blender_archive' | sha256sum -c -"
           mkdir -p "$work_dir/blender"
-          tar -xJf "$blender_archive" -C "$work_dir/blender"
+          run_checked extract-blender tar -xJf "$blender_archive" -C "$work_dir/blender"
           site_packages="$work_dir/blender/blender-5.2.0-linux-x64/5.2/python/lib/python3.13/site-packages"
-          test -d "$site_packages/numpy"
-          curl -fsSL "https://files.pythonhosted.org/packages/b6/d9/6cf4c59529956eb98df523a797ef7c71e6e241676720f9b443c18e53bf35/openimageio-3.1.17.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl" -o "$decoder_wheel"
-          test "$(wc -c < "$decoder_wheel" | tr -d '[:space:]')" = "6918964"
-          printf '%s  %s\n' "420a2cbfc7358c281a0902e9daa4ee229e7cb9071be4704ddf8943930c184f78" "$decoder_wheel" | sha256sum -c -
-          python3 -c 'import pathlib,sys,zipfile; p=pathlib.Path(sys.argv[1]); d=pathlib.Path(sys.argv[2]); z=zipfile.ZipFile(p); [(_ for _ in ()).throw(SystemExit(f"unsafe wheel member: {e.filename}")) if pathlib.PurePosixPath(e.filename).is_absolute() or ".." in pathlib.PurePosixPath(e.filename).parts else z.extract(e, d) for e in z.infolist()]' "$decoder_wheel" "$site_packages"
+          run_checked verify-numpy test -d "$site_packages/numpy"
+          run_checked download-decoder curl -fsSL "https://files.pythonhosted.org/packages/b6/d9/6cf4c59529956eb98df523a797ef7c71e6e241676720f9b443c18e53bf35/openimageio-3.1.17.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl" -o "$decoder_wheel"
+          run_checked verify-decoder-size sh -c "test \"\$(wc -c < '$decoder_wheel' | tr -d '[:space:]')\" = '6918964'"
+          run_checked verify-decoder-sha sh -c "printf '%s  %s\\n' '420a2cbfc7358c281a0902e9daa4ee229e7cb9071be4704ddf8943930c184f78' '$decoder_wheel' | sha256sum -c -"
+          run_checked extract-decoder python3 -c 'import pathlib,sys,zipfile; p=pathlib.Path(sys.argv[1]); d=pathlib.Path(sys.argv[2]); z=zipfile.ZipFile(p); [(_ for _ in ()).throw(SystemExit(f"unsafe wheel member: {e.filename}")) if pathlib.PurePosixPath(e.filename).is_absolute() or ".." in pathlib.PurePosixPath(e.filename).parts else z.extract(e, d) for e in z.infolist()]' "$decoder_wheel" "$site_packages"
           decoder_root="$site_packages/OpenImageIO"
-          test -f "$decoder_root/OpenImageIO.cpython-313-x86_64-linux-gnu.so"
-          test -f "$decoder_root/lib/libOpenImageIO.so.3.1.17"
+          run_checked verify-decoder-extension test -f "$decoder_root/OpenImageIO.cpython-313-x86_64-linux-gnu.so"
+          run_checked verify-decoder-library test -f "$decoder_root/lib/libOpenImageIO.so.3.1.17"
           export LD_LIBRARY_PATH="$decoder_root/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-          set +e
-          probe_output="$("$work_dir/blender/blender-5.2.0-linux-x64/5.2/python/bin/python3.13" -I -c 'import OpenImageIO as oiio, numpy; print("module", oiio.__file__); print("numpy", numpy.__version__); print("formats", oiio.get_string_attribute("format_list")); required = {"openexr", "jpeg", "png", "tiff", "webp"}; formats = set(oiio.get_string_attribute("format_list").split(",")); assert required <= formats, (required - formats, oiio.VERSION_STRING); print("version", oiio.VERSION_STRING)' 2>&1)"
-          probe_status=$?
-          set -e
-          printf '%s\n' "$probe_output"
-          if [ "$probe_status" -ne 0 ]; then
-            escaped_output="$(printf '%s' "$probe_output" | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')"
-            echo "::error title=Blender decoder probe failed::$escaped_output"
-            exit "$probe_status"
-          fi
+          run_checked decoder-probe "$work_dir/blender/blender-5.2.0-linux-x64/5.2/python/bin/python3.13" -I -c 'import OpenImageIO as oiio, numpy; print("module", oiio.__file__); print("numpy", numpy.__version__); print("formats", oiio.get_string_attribute("format_list")); required = {"openexr", "jpeg", "png", "tiff", "webp"}; formats = set(oiio.get_string_attribute("format_list").split(",")); assert required <= formats, (required - formats, oiio.VERSION_STRING); print("version", oiio.VERSION_STRING)'
 
   build-and-push:
     runs-on: ubuntu-24.04
