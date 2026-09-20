@@ -87,7 +87,7 @@ ARG OPENIMAGEIO_WHEEL_BYTES="6918964"
 
 RUN set -eu \
     && if [ -n "$BLENDER_URL" ]; then \
-        echo "Installing Blender ${BLENDER_VERSION} (${BLENDER_VARIANT})..." \
+        echo "Installing Blender ${BLENDER_VERSION} (${BLENDER_VARIANT})" \
         && test -n "$BLENDER_SHA256" \
         && mkdir -p /tmp/blender-extract /opt/blender-${BLENDER_VERSION} \
         && blender_archive="/tmp/blender-${BLENDER_VARIANT}.tar.xz" \
@@ -97,20 +97,38 @@ RUN set -eu \
         && EXTRACTED_DIR=$(find /tmp/blender-extract -maxdepth 1 -mindepth 1 -type d -name "blender-*" | head -n 1) \
         && test -n "$EXTRACTED_DIR" \
         && test -x "$EXTRACTED_DIR/blender" \
-        && cp -a "$EXTRACTED_DIR/." /opt/blender-${BLENDER_VERSION}/ \
+        && cp -a "$EXTRACTED_DIR/." /opt/blender-${BLENDER_VERSION}/; \
+    fi
+
+RUN set -eu \
+    && if [ -n "$BLENDER_URL" ]; then \
+        echo "Installing OpenImageIO Python decoder (${BLENDER_VARIANT})" \
         && site_packages=$(find /opt/blender-${BLENDER_VERSION} -type d -path '*/python/lib/python3.13/site-packages' -print -quit) \
         && test -n "$site_packages" \
         && decoder_wheel="/tmp/openimageio-${OPENIMAGEIO_WHEEL_SHA256}.whl" \
         && curl -fsSL "$OPENIMAGEIO_WHEEL_URL" -o "$decoder_wheel" \
         && test "$(wc -c < "$decoder_wheel" | tr -d '[:space:]')" = "$OPENIMAGEIO_WHEEL_BYTES" \
         && printf '%s  %s\n' "$OPENIMAGEIO_WHEEL_SHA256" "$decoder_wheel" | sha256sum -c - \
-        && python3 -c 'import pathlib,sys,zipfile; p=pathlib.Path(sys.argv[1]); d=pathlib.Path(sys.argv[2]); z=zipfile.ZipFile(p); [(_ for _ in ()).throw(SystemExit(f"unsafe wheel member: {e.filename}")) if pathlib.PurePosixPath(e.filename).is_absolute() or ".." in pathlib.PurePosixPath(e.filename).parts else z.extract(e, d) for e in z.infolist()]' "$decoder_wheel" "$site_packages" \
+        && python3 -c 'import pathlib,sys,zipfile; p=pathlib.Path(sys.argv[1]); d=pathlib.Path(sys.argv[2]); z=zipfile.ZipFile(p); [(_ for _ in ()).throw(SystemExit(f"unsafe wheel member: {e.filename}")) if pathlib.PurePosixPath(e.filename).is_absolute() or ".." in pathlib.PurePosixPath(e.filename).parts else z.extract(e, d) for e in z.infolist()]' "$decoder_wheel" "$site_packages"; \
+    fi
+
+RUN set -eu \
+    && if [ -n "$BLENDER_URL" ]; then \
+        echo "Probing OpenImageIO Python decoder (${BLENDER_VARIANT})" \
+        && site_packages=$(find /opt/blender-${BLENDER_VERSION} -type d -path '*/python/lib/python3.13/site-packages' -print -quit) \
         && decoder_root="$site_packages/OpenImageIO" \
         && test -f "$decoder_root/OpenImageIO.cpython-313-x86_64-linux-gnu.so" \
         && test -f "$decoder_root/lib/libOpenImageIO.so.3.1.17" \
+        && blender_python=$(find /opt/blender-${BLENDER_VERSION} -type f -path '*/python/bin/python3.13' -print -quit) \
+        && test -n "$blender_python" \
         && LD_LIBRARY_PATH="$decoder_root/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-           "$EXTRACTED_DIR/5.2/python/bin/python3.13" -I -c 'import OpenImageIO as oiio, numpy; required = {"openexr", "jpeg", "png", "tiff", "webp"}; formats = set(oiio.get_string_attribute("format_list").split(",")); assert required <= formats, (required - formats, oiio.VERSION_STRING); print(oiio.VERSION_STRING)' \
-        && rm -f "$blender_archive" "$decoder_wheel" \
+           "$blender_python" -I -c 'import OpenImageIO as oiio, numpy; required = {"openexr", "jpeg", "png", "tiff", "webp"}; formats = set(oiio.get_string_attribute("format_list").split(",")); assert required <= formats, (required - formats, oiio.VERSION_STRING); print(oiio.VERSION_STRING)'; \
+    fi
+
+RUN set -eu \
+    && if [ -n "$BLENDER_URL" ]; then \
+        echo "Finalizing Blender runtime (${BLENDER_VARIANT})" \
+        && rm -f "/tmp/blender-${BLENDER_VARIANT}.tar.xz" "/tmp/openimageio-${OPENIMAGEIO_WHEEL_SHA256}.whl" \
         && rm -rf /tmp/blender-extract \
         && ln -sf /opt/blender-${BLENDER_VERSION}/blender /usr/local/bin/blender \
         && if [ -n "$BLENDER_ARTIFACT_ID" ]; then \
