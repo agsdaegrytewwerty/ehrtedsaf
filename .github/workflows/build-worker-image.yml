@@ -57,6 +57,7 @@ jobs:
             set -e
             printf '%s\n' "$output"
             if [ "$status" -ne 0 ]; then
+              echo "::error title=$label::$(printf '%s' "$output" | tr '\n' ' ' | cut -c1-140)"
               publish_diagnostic "$label" "$output"
               return "$status"
             fi
