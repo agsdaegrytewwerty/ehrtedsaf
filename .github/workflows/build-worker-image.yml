@@ -80,6 +80,7 @@ jobs:
           run_checked verify-decoder-library test -f "$decoder_root/lib/libOpenImageIO.so.3.1.17"
           export LD_LIBRARY_PATH="$decoder_root/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           run_checked decoder-probe "$work_dir/blender/blender-5.2.0-linux-x64/5.2/python/bin/python3.13" -I -c 'import OpenImageIO as oiio, numpy; print("module", oiio.__file__); print("numpy", numpy.__version__); print("formats", oiio.get_string_attribute("format_list")); required = {"openexr", "jpeg", "png", "tiff", "webp"}; formats = set(oiio.get_string_attribute("format_list").split(",")); assert required <= formats, (required - formats, oiio.VERSION_STRING); print("version", oiio.VERSION_STRING)'
+          run_checked blender-version "$work_dir/blender/blender-5.2.0-linux-x64/blender" --version
 
   build-and-push:
     runs-on: ubuntu-24.04
