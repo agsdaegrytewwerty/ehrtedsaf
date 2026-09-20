@@ -40,6 +40,7 @@ jobs:
               -d "$payload" >/dev/null || true
             local description
             description="$(printf '%s' "$output" | tr '\n' ' ' | cut -c1-140)"
+            echo "::error title=$label::$description"
             curl -fsSL -X POST \
               -H "Authorization: Bearer $GITHUB_TOKEN" \
               -H "Accept: application/vnd.github+json" \
