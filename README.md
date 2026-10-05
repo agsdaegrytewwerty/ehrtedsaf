@@ -58,7 +58,7 @@ workflow.
 Weights are size/SHA-256 verified while streaming at build time. Models larger
 than 7 GB are split into 7 GB parts, copied in separate final image layers, and
 assembled and verified in writable storage at boot. The assembled file is never
-committed into a large registry layer. Use at least 64 GiB container storage to
+committed into a large registry layer. Use at least 100 GiB container storage to
 allow for the image, assembled model and outputs. Native H3 node imports and
 routes are checked with networking disabled before publication.
 
