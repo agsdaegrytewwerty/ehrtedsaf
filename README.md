@@ -41,7 +41,7 @@ ComfyUI; there is no runtime model download or package installation.
 `.github/workflows/build-comfyui-image.yml` validates the installed runtime
 with networking disabled before pushing
 `ghcr.io/agsdaegrytewwerty/projectswift-comfyui:image-<commit>`. Deploy the
-resulting digest, rather than a mutable tag. Keep the model image private
-unless redistribution of its contents is intended; Salad accepts authenticated
+resulting digest, rather than a mutable tag. The current package permits
+anonymous pulls. If the package is made private, Salad also accepts authenticated
 GHCR pulls. Runtime loading into RAM/VRAM still occurs after Salad starts
 billing. A GPU canary is required before switching the image pool.
