@@ -51,6 +51,10 @@ billing. A GPU canary is required before switching the image pool.
 `Dockerfile.h3` installs the native H3 ComfyUI revision and CUDA 13 dependencies,
 using the checksum-verified SM86-only PyTorch build from the image runtime release.
 It targets the RTX 3090 worker pool. The full native H3 nodes remain installed.
+Unlike the image-only bundle, it installs torchaudio, FFmpeg, libsndfile and the
+native ComfyUI audio/video dependencies. Offline checks exercise audio resampling,
+FFT, WAV I/O and MP4 audio encoding/decoding. The GPU canary also requires generated
+audio in the final MP4.
 Its `worker` target contains the pinned beta5 TURBO W4A8 diffusion model and
 video/audio VAEs from `h3/h3_runtime.json`. Its `conditioning` target contains
 Qwen3-VL and the video VAE for an isolated end-to-end canary; it is not a

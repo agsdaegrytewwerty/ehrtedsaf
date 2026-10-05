@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import subprocess
+import tempfile
 import time
 import urllib.request
 
@@ -22,6 +23,26 @@ assert torch.version.cuda == '13.0', torch.version.cuda
 assert torch._C._cuda_getArchFlags().split() == ['sm_86']
 assert torch.backends.cudnn.version() is not None
 assert torch.backends.cuda.is_flash_attention_available()
+import torchaudio
+import soundfile
+import av
+assert torchaudio.__version__.split('+')[0] == '2.10.0', torchaudio.__version__
+# The image-only bundle drops audio dependencies; H3 must keep the separate
+# torchaudio package and the decode/mux stack when reusing its PyTorch wheel.
+wave = torch.sin(torch.arange(4800, dtype=torch.float32) * (2 * torch.pi * 440 / 48000)).unsqueeze(0)
+resampled = torchaudio.functional.resample(wave, 48000, 24000)
+assert resampled.shape == (1, 2400) and torch.isfinite(resampled).all()
+assert torch.isfinite(torch.fft.rfft(wave)).all()
+with tempfile.TemporaryDirectory(prefix='h3-audio-check-') as temporary:
+    wav, mp4 = Path(temporary) / 'audio.wav', Path(temporary) / 'clip.mp4'
+    soundfile.write(wav, wave.squeeze().numpy(), 48000, subtype='PCM_16')
+    samples, rate = soundfile.read(wav)
+    assert len(samples) == 4800 and rate == 48000
+    subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=black:s=32x32:r=24', '-i', str(wav), '-t', '0.1', '-c:v', 'libx264', '-c:a', 'aac', str(mp4)], check=True)
+    with av.open(str(mp4)) as container:
+        assert len(container.streams.video) == 1 and len(container.streams.audio) == 1
+        assert sum(frame.samples for frame in container.decode(audio=0)) > 0
+print('Verified H3 audio: torchaudio resampling, FFT, WAV I/O and MP4 audio mux/decode', flush=True)
 log = Path('/tmp/h3-cpu-verification.log')
 with log.open('w') as output:
     process = subprocess.Popen([str(ROOT / 'venv/bin/python'), 'main.py', '--cpu', '--listen', '127.0.0.1', '--port', '8188', '--disable-auto-launch', '--disable-api-nodes'], cwd=ROOT, stdout=output, stderr=subprocess.STDOUT)
