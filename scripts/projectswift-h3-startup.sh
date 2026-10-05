@@ -30,8 +30,9 @@ status_pid="$!"
 import json
 from pathlib import Path
 import torch
-assert torch.__version__ == '2.10.0+cu130', torch.__version__
+assert torch.__version__ == '2.10.0+cu130.sm86.projectswift1', torch.__version__
 assert torch.cuda.is_available(), 'H3 image requires a CUDA 13 compatible NVIDIA driver'
+assert torch.cuda.get_device_capability(0) == (8, 6), 'H3 image requires an SM86 GPU'
 assert torch.cuda.get_device_properties(0).total_memory >= 23 * 1024**3, 'H3 worker requires a GPU with at least 24 GB nominal VRAM'
 plan = json.loads(Path('/opt/projectswift-h3/h3_runtime.json').read_text())
 role = Path('/opt/projectswift-h3/role').read_text().strip()

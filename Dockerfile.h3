@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 FROM ubuntu:24.04 AS runtime
-ENV DEBIAN_FRONTEND=noninteractive PIP_DISABLE_PIP_VERSION_CHECK=1 PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive PIP_DISABLE_PIP_VERSION_CHECK=1 PYTHONUNBUFFERED=1 \
+    LD_LIBRARY_PATH=/opt/ComfyUI/venv/lib/python3.12/site-packages/nvidia/cu13/lib
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl git python3.12 python3.12-venv ffmpeg libgomp1 libgl1 libglib2.0-0 libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
@@ -10,10 +11,24 @@ RUN git init -q /opt/ComfyUI \
     && git -C /opt/ComfyUI fetch --depth 1 origin "$COMFY_REVISION" \
     && git -C /opt/ComfyUI checkout --detach FETCH_HEAD \
     && rm -rf /opt/ComfyUI/.git
-RUN python3.12 -m venv --copies /opt/ComfyUI/venv \
-    && /opt/ComfyUI/venv/bin/python -m pip install --no-cache-dir torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu130 \
-    && /opt/ComfyUI/venv/bin/python -m pip install --no-cache-dir -r /opt/ComfyUI/requirements.txt zstandard \
-    && /opt/ComfyUI/venv/bin/python -m pip freeze > /opt/ComfyUI/requirements-installed.lock
+# The image pool already validates this CUDA 13 / SM86-only PyTorch build.
+# Keep native H3 ComfyUI and its dependencies, without the other GPU architectures.
+ARG TORCH_WHEEL_URL=https://github.com/agsdaegrytewwerty/projectswift-comfyui/releases/download/v1.0.1/torch-2.10.0%2Bcu130.sm86.projectswift1-cp312-cp312-manylinux_2_28_x86_64.whl
+ARG TORCH_WHEEL_SHA256=92ff988133b512396616a5e8727d4782af5945cf2df95c2c1d4d06473b0e41c0
+ARG TORCH_WHEEL_BYTES=1254129452
+RUN curl -fL --retry 5 "$TORCH_WHEEL_URL" -o /tmp/torch-2.10.0+cu130.sm86.projectswift1-cp312-cp312-manylinux_2_28_x86_64.whl \
+    && test "$(stat -c %s /tmp/torch-2.10.0+cu130.sm86.projectswift1-cp312-cp312-manylinux_2_28_x86_64.whl)" = "$TORCH_WHEEL_BYTES" \
+    && printf '%s  %s\n' "$TORCH_WHEEL_SHA256" /tmp/torch-2.10.0+cu130.sm86.projectswift1-cp312-cp312-manylinux_2_28_x86_64.whl | sha256sum -c - \
+    && python3.12 -m venv --copies /opt/ComfyUI/venv \
+    && /opt/ComfyUI/venv/bin/python -m pip install --no-cache-dir /tmp/torch-2.10.0+cu130.sm86.projectswift1-cp312-cp312-manylinux_2_28_x86_64.whl \
+    && /opt/ComfyUI/venv/bin/python -m pip install --no-cache-dir --no-deps \
+       nvidia-cufft==12.0.0.61 nvidia-curand==10.4.0.35 nvidia-cusolver==12.0.4.66 \
+       nvidia-cusparse==12.6.3.3 nvidia-nvjitlink==13.0.88 nvidia-nvtx==13.0.85 \
+    && printf 'torch==2.10.0+cu130.sm86.projectswift1\n' > /tmp/h3-torch-constraint.txt \
+    && /opt/ComfyUI/venv/bin/python -m pip install --no-cache-dir -c /tmp/h3-torch-constraint.txt torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu130 \
+    && /opt/ComfyUI/venv/bin/python -m pip install --no-cache-dir -c /tmp/h3-torch-constraint.txt -r /opt/ComfyUI/requirements.txt zstandard \
+    && /opt/ComfyUI/venv/bin/python -m pip freeze > /opt/ComfyUI/requirements-installed.lock \
+    && rm -f /tmp/torch-*.whl /tmp/h3-torch-constraint.txt
 COPY h3 /opt/projectswift-h3
 RUN mkdir -p /opt/ComfyUI/custom_nodes/projectswift_h3_condition /opt/ComfyUI/custom_nodes/projectswift_h3_routes \
     && cp /opt/projectswift-h3/h3_condition_nodes/__init__.py /opt/ComfyUI/custom_nodes/projectswift_h3_condition/__init__.py \
