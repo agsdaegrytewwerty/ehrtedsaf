@@ -45,3 +45,39 @@ resulting digest, rather than a mutable tag. The current package permits
 anonymous pulls. If the package is made private, Salad also accepts authenticated
 GHCR pulls. Runtime loading into RAM/VRAM still occurs after Salad starts
 billing. A GPU canary is required before switching the image pool.
+
+## ProjectSwift H3 video workers
+
+`Dockerfile.h3` installs the native H3 ComfyUI revision and CUDA 13 dependencies.
+Its `worker` target contains the pinned beta5 TURBO W4A8 diffusion model and
+video/audio VAEs from `h3/h3_runtime.json`. Its `conditioning` target contains
+Qwen3-VL and the video VAE for an isolated end-to-end canary; it is not a
+generation worker. Production conditioning remains in the Swift app's local
+workflow.
+
+Weights are size/SHA-256 verified while streaming at build time. Models larger
+than 7 GB are split into 7 GB parts, copied in separate final image layers, and
+assembled and verified in writable storage at boot. The assembled file is never
+committed into a large registry layer. Use at least 64 GiB container storage to
+allow for the image, assembled model and outputs. Native H3 node imports and
+routes are checked with networking disabled before publication.
+
+The workflow publishes immutable `h3-worker-<commit>` and
+`h3-conditioning-<commit>` tags in the existing public `projectswift-comfyui`
+GHCR package. Image workflow tags and digests are preserved. GPU validation is
+required before production rollout.
+
+No ComfyUI workflow graph is embedded in either image. The Swift app submits
+graphs per job. ComfyUI's user/settings directories are writable. Process launch
+settings can be replaced with `PROJECTSWIFT_COMFY_ARGS_JSON`, for example:
+
+```json
+["--normalvram", "--reserve-vram", "0.5", "--disable-auto-launch"]
+```
+
+Alternatively, set `PROJECTSWIFT_COMFY_ARGS_FILE` to a writable JSON file with
+the same array. File settings take precedence. Process changes require a worker
+restart, but no image rebuild; workflow changes apply with the next prompt.
+Keep persistent settings in the provider environment or external storage, since
+a reallocated worker loses its writable container layer. No registry, Salad,
+or output-buffer credentials are included in the image.

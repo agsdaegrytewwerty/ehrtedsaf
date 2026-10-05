@@ -1,0 +1,70 @@
+# syntax=docker/dockerfile:1
+FROM ubuntu:24.04 AS runtime
+ENV DEBIAN_FRONTEND=noninteractive PIP_DISABLE_PIP_VERSION_CHECK=1 PYTHONUNBUFFERED=1
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl git python3.12 python3.12-venv ffmpeg libgomp1 libgl1 libglib2.0-0 libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+ARG COMFY_REVISION=d707c97a7d557b147cabf5831f2ed9e404da2afb
+RUN git init -q /opt/ComfyUI \
+    && git -C /opt/ComfyUI remote add origin https://github.com/Comfy-Org/ComfyUI.git \
+    && git -C /opt/ComfyUI fetch --depth 1 origin "$COMFY_REVISION" \
+    && git -C /opt/ComfyUI checkout --detach FETCH_HEAD \
+    && rm -rf /opt/ComfyUI/.git
+RUN python3.12 -m venv --copies /opt/ComfyUI/venv \
+    && /opt/ComfyUI/venv/bin/python -m pip install --no-cache-dir torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu130 \
+    && /opt/ComfyUI/venv/bin/python -m pip install --no-cache-dir -r /opt/ComfyUI/requirements.txt zstandard \
+    && /opt/ComfyUI/venv/bin/python -m pip freeze > /opt/ComfyUI/requirements-installed.lock
+COPY h3 /opt/projectswift-h3
+RUN mkdir -p /opt/ComfyUI/custom_nodes/projectswift_h3_condition /opt/ComfyUI/custom_nodes/projectswift_h3_routes \
+    && cp /opt/projectswift-h3/h3_condition_nodes/__init__.py /opt/ComfyUI/custom_nodes/projectswift_h3_condition/__init__.py \
+    && cp /opt/projectswift-h3/h3_worker_routes.py /opt/ComfyUI/custom_nodes/projectswift_h3_routes/__init__.py \
+    && cp /opt/projectswift-h3/h3_runtime.json /opt/ComfyUI/custom_nodes/projectswift_h3_routes/h3_runtime.json
+COPY --chmod=755 scripts/projectswift-h3-startup.sh /usr/local/bin/projectswift-h3-startup
+WORKDIR /opt/ComfyUI
+EXPOSE 8188
+CMD ["/usr/local/bin/projectswift-h3-startup"]
+
+FROM runtime AS diffusion
+RUN python3.12 /opt/projectswift-h3/model_assets.py download \
+    --manifest /opt/projectswift-h3/h3_runtime.json --folder diffusion_models --destination /assets --split
+
+FROM runtime AS encoder
+RUN python3.12 /opt/projectswift-h3/model_assets.py download \
+    --manifest /opt/projectswift-h3/h3_runtime.json --folder text_encoders --destination /assets --split
+
+FROM runtime AS video_vae
+RUN python3.12 /opt/projectswift-h3/model_assets.py download \
+    --manifest /opt/projectswift-h3/h3_runtime.json --folder vae \
+    --filename minimax_h3_video_vae_fp16.safetensors --destination /assets
+
+FROM runtime AS audio_vae
+RUN python3.12 /opt/projectswift-h3/model_assets.py download \
+    --manifest /opt/projectswift-h3/h3_runtime.json --folder vae \
+    --filename minimax_h3_audio_vae_fp32.safetensors --destination /assets
+
+FROM runtime AS worker
+LABEL org.opencontainers.image.title="ProjectSwift H3 video worker" \
+      org.opencontainers.image.source="https://github.com/agsdaegrytewwerty/ehrtedsaf" \
+      org.opencontainers.image.description="Pinned H3 runtime, beta5 TURBO W4A8 and both VAEs; conditioning prepared separately"
+# Each large-model part is a separate layer below GHCR's 10 GB limit.
+COPY --from=diffusion /assets/*.part00 /opt/projectswift-h3/model-parts/
+COPY --from=diffusion /assets/*.part01 /opt/projectswift-h3/model-parts/
+COPY --from=diffusion /assets/parts.json /opt/projectswift-h3/model-parts/parts.json
+COPY --from=video_vae /assets/*.safetensors /opt/ComfyUI/models/vae/
+COPY --from=audio_vae /assets/*.safetensors /opt/ComfyUI/models/vae/
+RUN printf 'worker\n' > /opt/projectswift-h3/role \
+    && test "$(du -sb /opt | cut -f1)" -lt 34000000000
+RUN --network=none /opt/ComfyUI/venv/bin/python /opt/projectswift-h3/verify_runtime.py
+
+# Used for an isolated conditioning canary, never as a generation worker.
+FROM runtime AS conditioning
+LABEL org.opencontainers.image.title="ProjectSwift H3 conditioning canary" \
+      org.opencontainers.image.source="https://github.com/agsdaegrytewwerty/ehrtedsaf"
+COPY --from=encoder /assets/*.part00 /opt/projectswift-h3/model-parts/
+COPY --from=encoder /assets/*.part01 /opt/projectswift-h3/model-parts/
+COPY --from=encoder /assets/*.part02 /opt/projectswift-h3/model-parts/
+COPY --from=encoder /assets/parts.json /opt/projectswift-h3/model-parts/parts.json
+COPY --from=video_vae /assets/*.safetensors /opt/ComfyUI/models/vae/
+RUN printf 'conditioning\n' > /opt/projectswift-h3/role \
+    && test "$(du -sb /opt | cut -f1)" -lt 34000000000
+RUN --network=none /opt/ComfyUI/venv/bin/python /opt/projectswift-h3/verify_runtime.py

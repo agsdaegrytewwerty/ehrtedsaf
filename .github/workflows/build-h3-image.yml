@@ -1,0 +1,53 @@
+name: Build ProjectSwift H3 Video Images
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile.h3
+      - h3/**
+      - scripts/projectswift-h3-startup.sh
+      - .github/workflows/build-h3-image.yml
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        role: [worker, conditioning]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make room for model layers
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet /opt/hostedtoolcache/CodeQL
+          docker system prune -af
+          df -h /
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build, verify without networking, and publish
+        id: image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.h3
+          target: ${{ matrix.role }}
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/projectswift-comfyui:h3-${{ matrix.role }}-${{ github.sha }}
+          provenance: false
+          sbom: false
+      - name: Record immutable image
+        run: |
+          printf 'H3 %s image: `ghcr.io/%s/projectswift-comfyui@%s`\n' \
+            '${{ matrix.role }}' '${{ github.repository_owner }}' '${{ steps.image.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"
