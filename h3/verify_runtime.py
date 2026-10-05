@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix='h3-audio-check-') as temporary:
 print('Verified H3 audio: torchaudio resampling, FFT, WAV I/O and MP4 audio mux/decode', flush=True)
 log = Path('/tmp/h3-cpu-verification.log')
 with log.open('w') as output:
-    process = subprocess.Popen([str(ROOT / 'venv/bin/python'), 'main.py', '--cpu', '--listen', '127.0.0.1', '--port', '8188', '--disable-auto-launch', '--disable-api-nodes'], cwd=ROOT, stdout=output, stderr=subprocess.STDOUT)
+    process = subprocess.Popen([str(ROOT / 'venv/bin/python'), 'main.py', '--cpu', '--listen', '0.0.0.0,::', '--port', '8188', '--disable-auto-launch', '--disable-api-nodes'], cwd=ROOT, stdout=output, stderr=subprocess.STDOUT)
     try:
         deadline = time.monotonic() + 120
         while time.monotonic() < deadline:
@@ -61,9 +61,11 @@ with log.open('w') as output:
             raise RuntimeError(log.read_text())
         required = {'ProjectSwiftLoadH3Condition', 'ProjectSwiftSaveH3Condition', 'MiniMaxH3ImageToVideo', 'EmptyMiniMaxH3LatentAV', 'UNETLoader', 'BasicGuider', 'BasicScheduler', 'RandomNoise', 'KSamplerSelect', 'SamplerCustomAdvanced', 'VAELoader', 'VAEDecodeTiled', 'VAEDecodeAudio', 'CreateVideo', 'SaveVideo', 'SaveImage'}
         assert not required - nodes.keys(), sorted(required - nodes.keys())
+        with urllib.request.urlopen('http://[::1]:8188/object_info', timeout=2) as response:
+            assert not required - json.load(response).keys()
         with urllib.request.urlopen('http://127.0.0.1:8188/projectswift/h3/profile', timeout=2) as response:
             assert json.load(response)['comfy_revision'] == plan['comfy_revision']
-        print(f"Verified {role} H3 image: CPU imports, native node contract and status routes", flush=True)
+        print(f"Verified {role} H3 image: CPU imports, native node contract, IPv4/IPv6 binding and status routes", flush=True)
     finally:
         process.terminate()
         try:

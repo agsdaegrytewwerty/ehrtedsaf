@@ -1,0 +1,7 @@
+# syntax=docker/dockerfile:1
+# Reuse verified model layers when fixing the runtime launcher.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+COPY --link --chmod=755 scripts/projectswift-h3-startup.sh /usr/local/bin/projectswift-h3-startup
+COPY --link h3/verify_runtime.py /opt/projectswift-h3/verify_runtime.py
+RUN --network=none /opt/ComfyUI/venv/bin/python /opt/projectswift-h3/verify_runtime.py

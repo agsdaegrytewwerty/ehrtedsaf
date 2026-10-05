@@ -15,6 +15,9 @@ H3_PORT="$port" python3.12 - <<'PY' &
 import http.server, json, os, socket
 class Server(http.server.ThreadingHTTPServer):
     address_family = socket.AF_INET6
+    def server_bind(self):
+        self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        super().server_bind()
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.split('?')[0] != '/startup_status':
@@ -66,6 +69,6 @@ if not isinstance(args, list) or not all(isinstance(arg, str) and '\0' not in ar
     raise SystemExit('Comfy launch settings must be a JSON array of strings')
 if any(arg.split('=', 1)[0] in ('--listen', '--port', '--cuda-device') for arg in args):
     raise SystemExit('Use PROJECTSWIFT_H3_PORT for the port; network binding and selected GPU are owned by the worker')
-command = [sys.executable, 'main.py', '--listen', '::', '--port', os.environ['PROJECTSWIFT_H3_PORT'], '--cuda-device', '0', *args, *sys.argv[1:]]
+command = [sys.executable, 'main.py', '--listen', '0.0.0.0,::', '--port', os.environ['PROJECTSWIFT_H3_PORT'], '--cuda-device', '0', *args, *sys.argv[1:]]
 os.execv(sys.executable, command)
 PY
