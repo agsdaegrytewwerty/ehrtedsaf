@@ -26,7 +26,7 @@ RUN curl -fL --retry 5 "$TORCH_WHEEL_URL" -o /tmp/torch-2.10.0+cu130.sm86.projec
        nvidia-cusparse==12.6.3.3 nvidia-nvjitlink==13.0.88 nvidia-nvtx==13.0.85 \
     && printf 'torch==2.10.0+cu130.sm86.projectswift1\n' > /tmp/h3-torch-constraint.txt \
     && /opt/ComfyUI/venv/bin/python -m pip install --no-cache-dir -c /tmp/h3-torch-constraint.txt torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu130 \
-    && /opt/ComfyUI/venv/bin/python -m pip install --no-cache-dir -c /tmp/h3-torch-constraint.txt -r /opt/ComfyUI/requirements.txt zstandard \
+    && /opt/ComfyUI/venv/bin/python -m pip install --no-cache-dir -c /tmp/h3-torch-constraint.txt -r /opt/ComfyUI/requirements.txt zstandard soundfile==0.13.1 \
     && /opt/ComfyUI/venv/bin/python -m pip freeze > /opt/ComfyUI/requirements-installed.lock \
     && rm -f /tmp/torch-*.whl /tmp/h3-torch-constraint.txt
 COPY h3 /opt/projectswift-h3
