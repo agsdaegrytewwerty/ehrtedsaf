@@ -1,0 +1,55 @@
+# syntax=docker/dockerfile:1
+FROM ubuntu:24.04 AS runtime
+
+ENV DEBIAN_FRONTEND=noninteractive PIP_DISABLE_PIP_VERSION_CHECK=1
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl python3.12 python3.12-venv zstd libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG RUNTIME_URL=https://github.com/agsdaegrytewwerty/projectswift-comfyui/releases/download/v1.0.1/projectswift-comfyui-image-py312-cu130-sm86-v1.0.1.tar.zst
+ARG RUNTIME_SHA256=08e97716c16202f2359a41338dba3404246984f136e95d2ccc27d902998be3cc
+ARG RUNTIME_BYTES=1947939199
+RUN curl -fL --retry 5 "$RUNTIME_URL" -o /tmp/runtime.tar.zst \
+    && test "$(stat -c %s /tmp/runtime.tar.zst)" = "$RUNTIME_BYTES" \
+    && printf '%s  %s\n' "$RUNTIME_SHA256" /tmp/runtime.tar.zst | sha256sum -c - \
+    && mkdir -p /opt/ComfyUI-lean \
+    && tar --zstd -xf /tmp/runtime.tar.zst -C /opt/ComfyUI-lean --strip-components=1 \
+    && python3.12 -m venv --copies /opt/ComfyUI-lean/venv \
+    && /opt/ComfyUI-lean/venv/bin/python -m pip install --no-index --no-deps \
+        --find-links /opt/ComfyUI-lean/wheelhouse \
+        -r /opt/ComfyUI-lean/requirements-projectswift.lock \
+    && printf '%s\n' "$RUNTIME_SHA256" > /opt/ComfyUI-lean/.projectswift-runtime-sha256 \
+    && rm -rf /tmp/runtime.tar.zst /opt/ComfyUI-lean/wheelhouse /root/.cache/pip
+
+FROM ubuntu:24.04 AS checkpoint
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+ARG CHECKPOINT_URL=https://huggingface.co/wiikoo/checkpoint/resolve/614b33af9956175478ef9c823a5f1e4ef4fcdf5e/Illustrious/ilustmix_v9.safetensors?download=true
+ARG CHECKPOINT_SHA256=0826c8c74808371f26a79d8fa6c74a6f00696b632a5a40f4be301fb1be732279
+ARG CHECKPOINT_BYTES=7419809082
+RUN mkdir -p /models \
+    && curl -fL --retry 5 "$CHECKPOINT_URL" -o /models/ilustmix_v9.safetensors \
+    && test "$(stat -c %s /models/ilustmix_v9.safetensors)" = "$CHECKPOINT_BYTES" \
+    && printf '%s  %s\n' "$CHECKPOINT_SHA256" /models/ilustmix_v9.safetensors | sha256sum -c -
+
+FROM ubuntu:24.04
+LABEL org.opencontainers.image.title="ProjectSwift ComfyUI image worker" \
+      org.opencontainers.image.description="Image workflows with the pinned SM86 runtime and ilustmix_v9 checkpoint installed" \
+      org.opencontainers.image.source="https://github.com/agsdaegrytewwerty/ehrtedsaf"
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONUNBUFFERED=1 \
+    PROJECTSWIFT_RUNTIME_SHA256=08e97716c16202f2359a41338dba3404246984f136e95d2ccc27d902998be3cc \
+    LD_LIBRARY_PATH=/opt/ComfyUI-lean/venv/lib/python3.12/site-packages/nvidia/cu13/lib
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates python3.12 libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=runtime /opt/ComfyUI-lean /opt/ComfyUI-lean
+# Keep the checkpoint in its own layer, below GHCR's 10 GB per-layer limit.
+COPY --from=checkpoint /models/ilustmix_v9.safetensors /opt/ComfyUI-lean/comfyui/models/checkpoints/ilustmix_v9.safetensors
+COPY --chmod=755 scripts/projectswift-comfyui-startup.sh /usr/local/bin/projectswift-comfyui-startup
+WORKDIR /opt/ComfyUI-lean/comfyui
+RUN /opt/ComfyUI-lean/venv/bin/python scripts/verify_torch_build.py \
+    && /opt/ComfyUI-lean/venv/bin/python scripts/verify_lean_runtime.py
+EXPOSE 8188
+CMD ["/usr/local/bin/projectswift-comfyui-startup"]
