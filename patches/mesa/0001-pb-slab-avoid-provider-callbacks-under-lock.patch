@@ -1,0 +1,121 @@
+--- a/src/gallium/auxiliary/pipebuffer/pb_bufmgr_slab.c
++++ b/src/gallium/auxiliary/pipebuffer/pb_bufmgr_slab.c
+@@ -207,17 +207,21 @@
+    if (slab->head.next == &slab->head)
+       list_addtail(&slab->head, &mgr->slabs);
+ 
+-   /* If the slab becomes totally empty, free it */
+-   if (slab->numFree == slab->numBuffers) {
+-      list = &slab->head;
+-      list_delinit(list);
++   /* Detach an empty slab under the lock, but release its provider buffer
++    * after unlocking. Provider callbacks can re-enter this manager.
++    */
++   bool empty = slab->numFree == slab->numBuffers;
++   if (empty)
++      list_delinit(&slab->head);
++
++   mtx_unlock(&mgr->mutex);
++
++   if (empty) {
+       pb_unmap(slab->bo);
+       pb_reference(&slab->bo, NULL);
+       FREE(slab->buffers);
+       FREE(slab);
+    }
+-
+-   mtx_unlock(&mgr->mutex);
+ }
+ 
+ 
+@@ -288,24 +292,24 @@
+ /**
+  * Create a new slab.
+  * 
+- * Called when we ran out of free slabs.
+- */
+-static enum pipe_error
++ * The slab is private until the caller publishes it under mgr->mutex.
++ * No provider callbacks may run with that mutex held: D3D12 allocation can
++ * reclaim completed BOs and release buffers belonging to this manager.
++ */
++static struct pb_slab *
+ pb_slab_create(struct pb_slab_manager *mgr)
+ {
+    struct pb_slab *slab;
+    struct pb_slab_buffer *buf;
+    unsigned numBuffers;
+    unsigned i;
+-   enum pipe_error ret;
+ 
+    slab = CALLOC_STRUCT(pb_slab);
+    if (!slab)
+-      return PIPE_ERROR_OUT_OF_MEMORY;
++      return NULL;
+ 
+    slab->bo = mgr->provider->create_buffer(mgr->provider, mgr->slabSize, &mgr->desc);
+    if(!slab->bo) {
+-      ret = PIPE_ERROR_OUT_OF_MEMORY;
+       goto out_err0;
+    }
+ 
+@@ -317,17 +321,14 @@
+                           PB_USAGE_CPU_WRITE |
+                           PB_USAGE_PERSISTENT, NULL);
+    if(!slab->virtual) {
+-      ret = PIPE_ERROR_OUT_OF_MEMORY;
+       goto out_err1;
+    }
+ 
+    numBuffers = slab->bo->base.size / mgr->bufSize;
+ 
+    slab->buffers = CALLOC(numBuffers, sizeof(*slab->buffers));
+-   if (!slab->buffers) {
+-      ret = PIPE_ERROR_OUT_OF_MEMORY;
+-      goto out_err1;
+-   }
++   if (!slab->buffers)
++      goto out_err2;
+ 
+    list_inithead(&slab->head);
+    list_inithead(&slab->freeBuffers);
+@@ -350,16 +351,15 @@
+       buf++;
+    }
+ 
+-   /* Add this slab to the list of partial slabs */
+-   list_addtail(&slab->head, &mgr->slabs);
+-
+-   return PIPE_OK;
+-
++   return slab;
++
++out_err2:
++   pb_unmap(slab->bo);
+ out_err1: 
+    pb_reference(&slab->bo, NULL);
+ out_err0: 
+    FREE(slab);
+-   return ret;
++   return NULL;
+ }
+ 
+ 
+@@ -394,7 +394,16 @@
+    
+    /* Create a new slab, if we run out of partial slabs */
+    if (mgr->slabs.next == &mgr->slabs) {
+-      (void) pb_slab_create(mgr);
++      mtx_unlock(&mgr->mutex);
++      slab = pb_slab_create(mgr);
++      mtx_lock(&mgr->mutex);
++
++      /* Prefer the new slab so it always has a live allocation. Another
++       * thread or provider callback may have made an older slab partial
++       * while we were unlocked. On allocation failure, reuse that space.
++       */
++      if (slab)
++         list_add(&slab->head, &mgr->slabs);
+       if (mgr->slabs.next == &mgr->slabs) {
+ 	 mtx_unlock(&mgr->mutex);
+ 	 return NULL;

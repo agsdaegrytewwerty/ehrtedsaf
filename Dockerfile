@@ -1,4 +1,23 @@
 # syntax=docker/dockerfile:1
+FROM ubuntu:24.04 AS eevee-mesa-build
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl xz-utils git patch build-essential pkg-config \
+        ninja-build python3-venv python3-mako python3-packaging python3-yaml \
+        bison flex libdrm-dev libexpat1-dev libglvnd-dev zlib1g-dev libzstd-dev \
+    && python3 -m venv --system-site-packages /opt/meson \
+    && /opt/meson/bin/pip install --no-cache-dir meson==1.8.3 \
+    && rm -rf /var/lib/apt/lists/*
+ENV PATH="/opt/meson/bin:${PATH}"
+WORKDIR /build
+COPY patches/mesa patches/mesa
+COPY tests/mesa tests/mesa
+COPY tests/test_mesa_slab.py tests/test_mesa_slab.py
+COPY tests/test_mesa_manifest.py tests/test_mesa_manifest.py
+COPY scripts/build_eevee_mesa.sh scripts/write_eevee_mesa_manifest.py scripts/
+RUN python3 -m unittest discover -s tests -p 'test_mesa_*.py' -v \
+    && bash scripts/build_eevee_mesa.sh
+
 FROM ubuntu:24.04
 
 LABEL org.opencontainers.image.title="RenderBoost Worker"
@@ -59,6 +78,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-psycopg2 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Fixed Mesa is private to EEVEE D3D12. Cycles/native EGL keep their own loader.
+COPY --from=eevee-mesa-build /opt/renderboost/mesa /opt/renderboost/mesa
+RUN LD_LIBRARY_PATH=/opt/renderboost/mesa/lib python3 -c \
+    'import ctypes; ctypes.CDLL("/opt/renderboost/mesa/lib/libEGL_mesa.so.0"); ctypes.CDLL("/opt/renderboost/mesa/lib/libgbm.so.1")'
+ENV RENDERBOOST_EEVEE_MESA_ROOT=/opt/renderboost/mesa
 
 # 2. Install official Node.js 22 LTS from a pinned archive
 ARG NODE_VERSION=22.10.0

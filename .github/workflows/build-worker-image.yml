@@ -8,6 +8,11 @@ on:
       - master
     paths:
       - "Dockerfile"
+      - "patches/mesa/**"
+      - "scripts/build_eevee_mesa.sh"
+      - "scripts/write_eevee_mesa_manifest.py"
+      - "tests/mesa/**"
+      - "tests/test_mesa_*.py"
       - ".github/workflows/build-worker-image.yml"
 
 permissions:
