@@ -155,7 +155,10 @@ jobs:
             NODE_SHA256=406791658a8bce3bc21fab786f45877adad391ea20badc87e1d65c7478b75062
             OPENIMAGEIO_WHEEL_SHA256=420a2cbfc7358c281a0902e9daa4ee229e7cb9071be4704ddf8943930c184f78
             OPENIMAGEIO_WHEEL_BYTES=6918964
-          cache-from: type=gha,scope=${{ matrix.variant }}
+          cache-from: |
+            type=gha,scope=${{ matrix.variant }}
+            type=gha,scope=base
+            type=gha,scope=sm86
           cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
           provenance: false
           sbom: false

@@ -10,8 +10,24 @@ prefix=/opt/renderboost/mesa
 patch_file="$repo_dir/patches/mesa/0001-pb-slab-avoid-provider-callbacks-under-lock.patch"
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
-curl --fail --location --retry 3 --connect-timeout 20 --max-time 900 \
-    "https://archive.mesa3d.org/mesa-${mesa_version}.tar.xz" -o "$work_dir/mesa.tar.xz"
+mesa_urls=(
+    "https://archive.mesa3d.org/mesa-${mesa_version}.tar.xz"
+    "http://archive.mesa3d.org/mesa-${mesa_version}.tar.xz"
+    "https://mesa.freedesktop.org/archive/mesa-${mesa_version}.tar.xz"
+)
+downloaded=0
+for url in "${mesa_urls[@]}"; do
+    if curl --fail --location --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 30 --max-time 900 \
+        "$url" -o "$work_dir/mesa.tar.xz"; then
+        downloaded=1
+        break
+    fi
+    echo "Failed to download Mesa from $url, trying fallback..." >&2
+done
+if [ "$downloaded" -ne 1 ]; then
+    echo "Could not download Mesa ${mesa_version} from any archive mirror." >&2
+    exit 1
+fi
 printf '%s  %s\n' "$source_sha512" "$work_dir/mesa.tar.xz" | sha512sum -c -
 printf '%s  %s\n' "$patch_sha256" "$patch_file" | sha256sum -c -
 tar -xJf "$work_dir/mesa.tar.xz" -C "$work_dir"
