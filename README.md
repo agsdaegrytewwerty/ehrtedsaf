@@ -27,8 +27,8 @@ Releases include a safe archive plus SM75, SM86, SM89, and SM120 family
 archives. The family archives retain the shared OptiX/OSL payloads, one
 compatible CUDA cubin family, and the lowest official CUDA PTX fallback.
 Blender 5.2 does not ship an SM89 cubin, so the SM89 archive carries NVIDIA's
-forward-compatible SM86 cubin. Lean v4 assets carry a distinct `-lean-v4`
-filename suffix so they can coexist with v3 downloads.
+forward-compatible SM86 cubin. Lean v5 assets carry a distinct `-lean-v5`
+filename suffix so they can coexist with earlier downloads.
 
 Workflow:
 

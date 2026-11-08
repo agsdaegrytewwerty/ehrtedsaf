@@ -40,7 +40,7 @@ jobs:
       BLENDER_VERSION: ${{ inputs.blender_version || '5.2.0' }}
       RELEASE_TAG: ${{ inputs.release_tag || 'blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-v4' }}
       RUNTIME_PROFILE: ${{ inputs.runtime_profile || 'standard' }}
-      RUNTIME_ASSET_FLAVOR: lean-v4
+      RUNTIME_ASSET_FLAVOR: lean-v5
       OPTIX_HEADERS_COMMIT: df7390b16bce5244b7352ca6d3e320f838297072
       REFERENCE_SAFE_BYTES: "244199308"
       PROTECTED_STANDARD_RELEASE_TAG: blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-v3
