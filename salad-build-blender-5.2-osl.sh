@@ -145,7 +145,9 @@ grep -q 'WITH_CYCLES_OSL ON' release-config/blender-cycles-headless-rtx.cmake
 (
   cd blender-src
   git lfs install --local
-  git lfs pull --include="release/datafiles/startup.blend" --exclude=""
+  # Blender reads the display ICC profiles at runtime when writing images for
+  # non-sRGB displays, so they must be real files, not LFS pointers.
+  git lfs pull --include="release/datafiles/startup.blend,release/datafiles/colormanagement/icc/*" --exclude=""
   python3 build_files/utils/make_update.py --no-blender
 )
 

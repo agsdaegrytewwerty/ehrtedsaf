@@ -10,7 +10,8 @@ usage() {
 Usage: verify_blender_runtime_tree.sh /path/to/blender-runtime-root
 
 Verify that the NVIDIA farm runtime retains its rendering libraries while no
-ELF file or symlink ships or requires a dependency pruned by the farm profile.
+ELF file or symlink ships or requires a dependency pruned by the farm profile,
+and that no packaged file is an unresolved Git LFS pointer.
 EOF
   exit 1
 }
@@ -125,6 +126,20 @@ main() {
     done < <(compgen -G "$forbidden_pattern" || true)
   done
 
+  # The build skips Git LFS downloads except for an explicit include list. A
+  # tracked file left off that list installs as pointer text, which looks like
+  # a normal file until something reads it at runtime. Pointers stay under 1 KiB.
+  local git_lfs_pointer_header="version https://git-lfs.github.com/spec/v1"
+  local first_line
+  while IFS= read -r -d '' path; do
+    first_line=""
+    IFS= read -r first_line <"$path" || true
+    if [[ "$first_line" == "$git_lfs_pointer_header" ]]; then
+      log "Unresolved Git LFS pointer would ship: ${path#$root/}"
+      violations=$((violations + 1))
+    fi
+  done < <(find "$root" -type f -size -1025c -print0)
+
   local elf_inspector
   if command -v readelf >/dev/null 2>&1; then
     elf_inspector="readelf"
@@ -165,7 +180,7 @@ main() {
     exit 1
   fi
 
-  log "Verified $elf_count ELF files; retained render dependencies are present and the pruned dependency closure is clean"
+  log "Verified $elf_count ELF files; retained render dependencies are present, the pruned dependency closure is clean, and no Git LFS pointers remain"
 }
 
 main "$@"
