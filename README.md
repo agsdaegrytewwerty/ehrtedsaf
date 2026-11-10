@@ -11,16 +11,24 @@ YesterdayRender Cycles GPU pools:
 - FFmpeg enabled for video-backed image textures
 - headless EGL/OpenGL context support for GPU-composited scenes
 - no oneAPI/HIP backends
-- no windowing/audio stack
-- no USD/Hydra/MaterialX
+- no Embree/SYCL/Unified Runtime stack; CPU fallback uses Cycles' native BVH
+- no windowing or desktop audio playback stack
+- no USD/Hydra/MaterialX/Draco runtime payloads
 
-Current default build: Blender 5.2.0.
+The lean farm profile still retains OpenImageIO, OpenColorIO, OpenVDB,
+OpenImageDenoise CPU and CUDA devices, OSL, CUDA, OptiX, and FFmpeg. Packaging
+is followed by an ELF dependency-closure check and a native CPU Cycles render
+with OpenImageDenoise, so an unsafe shared-library deletion fails before
+publication.
+
+Current default build: Blender 5.3.0, audio profile.
 
 Releases include a safe archive plus SM75, SM86, SM89, and SM120 family
 archives. The family archives retain the shared OptiX/OSL payloads, one
 compatible CUDA cubin family, and the lowest official CUDA PTX fallback.
 Blender 5.2 does not ship an SM89 cubin, so the SM89 archive carries NVIDIA's
-forward-compatible SM86 cubin.
+forward-compatible SM86 cubin. Lean v5 assets carry a distinct `-lean-v5`
+filename suffix so they can coexist with earlier downloads.
 
 Workflow:
 
@@ -87,3 +95,24 @@ restart, but no image rebuild; workflow changes apply with the next prompt.
 Keep persistent settings in the provider environment or external storage, since
 a reallocated worker loses its writable container layer. No registry, Salad,
 or output-buffer credentials are included in the image.
+
+An opt-in `audio` workflow profile uses
+`blender-cycles-headless-rtx-audio.cmake`. It retains the standard runtime's
+rendering features while enabling Audaspace, libsndfile, Rubber Band, and the
+already-present FFmpeg codec support for background scene mixdown. OpenAL,
+JACK, PulseAudio, PipeWire, and SDL playback remain disabled.
+
+Audio releases use distinct `-audio` asset names and require a release tag
+containing `audio`. A release is published only by a manual workflow
+dispatch, or by a push to `main` whose head commit message contains
+`[publish-runtime]`; other pushes build and verify without publishing. The
+workflow refuses an existing or protected tag and has file overwrites
+disabled, so the v3 standard, v1 audio and v2 production audio releases
+remain immutable.
+
+Blender 5.3 builds with GCC 14 (its code does not compile with clang-18) and
+adds `blender-5.3-overrides.cmake`: 5.3 uses Embree in Blender's own geometry
+BVH, so Embree and its SYCL/Unified Runtime libraries stay in 5.3 runtimes,
+where the trim and verify scripts keep and require them. 5.2 builds keep
+clang-18 and the Embree-free runtime. The EGL device selection patch is an
+opt-in dispatch input; production runtimes have not shipped it.

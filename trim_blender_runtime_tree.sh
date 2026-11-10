@@ -67,6 +67,14 @@ series_from_root() {
   return 1
 }
 
+# Blender 5.3 builds Embree into Blender itself (geometry BVH for Raycast, Sample Nearest, Proximity and
+# others), so the executable needs libembree and its SYCL/Unified Runtime libraries. 5.2 only used it in Cycles.
+series_links_embree() {
+  local series="$1"
+  local major="${series%%.*}" minor="${series#*.}"
+  (( major > 5 || (major == 5 && minor >= 3) ))
+}
+
 prune_cycles_kernels_for_release_family() {
   local runtime_root="${1:-}"
   local series="${2:-}"
@@ -215,15 +223,30 @@ main() {
       "$site_packages/MaterialX" \
       "$site_packages/OpenImageIO" \
       "$site_packages/PyOpenColorIO" \
-      "$root/lib/mesa" \
-      "$root/lib/libhiprt64.so"
+      "$root/lib/mesa"
 
     remove_glob "$site_packages/openvdb.cpython-*.so"
     remove_glob "$site_packages/MaterialX-*.dist-info"
     remove_glob "$site_packages/OpenImageIO-*.dist-info"
     remove_glob "$site_packages/PyOpenColorIO-*.dist-info"
     remove_glob "$site_packages/usd_core-*.dist-info"
-    remove_glob "$root/lib/libOpenImageDenoise_device_hip.so.*"
+
+    # Blender's precompiled dependency bundle installs these shared libraries
+    # even when their consumers are disabled at configure time. Keep this list
+    # paired with verify_blender_runtime_tree.sh so a retained ELF dependency
+    # fails the build before an archive or release can be published.
+    remove_glob "$root/lib/libusd_ms.so*"
+    remove_glob "$root/lib/libMaterialX*.so*"
+    if ! series_links_embree "$series"; then
+      remove_glob "$root/lib/libembree*.so*"
+      remove_glob "$root/lib/libsycl.so*"
+      remove_glob "$root/lib/libur_*.so*"
+    fi
+    remove_glob "$root/lib/libOpenImageDenoise_device_sycl.so*"
+    remove_glob "$root/lib/libSDL3.so*"
+    remove_glob "$root/lib/libdraco*.so*"
+    remove_glob "$root/lib/libhiprt*.so*"
+    remove_glob "$root/lib/libOpenImageDenoise_device_hip.so*"
     remove_glob "$root/lib/libvulkan.so*"
     remove_glob "$series_dir/scripts/addons_core/cycles/lib/kernel_gfx*.zst"
     remove_glob "$series_dir/scripts/addons_core/cycles/lib/kernel_rt_gfx*.zst"
