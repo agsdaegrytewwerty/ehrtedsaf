@@ -105,7 +105,8 @@ ARG BLENDER_VARIANT=""
 ARG BLENDER_URL=""
 ARG BLENDER_SHA256=""
 ARG BLENDER_ARTIFACT_ID=""
-ARG BLENDER_VERSION="5.2.0"
+ARG BLENDER_VERSION="5.3.0"
+ARG BLENDER_SERIES="5.3"
 ARG OPENIMAGEIO_WHEEL_URL="https://files.pythonhosted.org/packages/b6/d9/6cf4c59529956eb98df523a797ef7c71e6e241676720f9b443c18e53bf35/openimageio-3.1.17.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
 ARG OPENIMAGEIO_WHEEL_SHA256="420a2cbfc7358c281a0902e9daa4ee229e7cb9071be4704ddf8943930c184f78"
 ARG OPENIMAGEIO_WHEEL_BYTES="6918964"
@@ -148,7 +149,7 @@ RUN set -eu \
 
 ENV RENDERBOOST_NODE_VERSION="${NODE_VERSION}" \
     RENDERBOOST_NODE_SHA256="${NODE_SHA256}" \
-    RENDERBOOST_FRAME_PIXEL_DECODER_BAKED_MODULE_PATH="/opt/blender-5.2.0/5.2/python/lib/python3.13/site-packages"
+    RENDERBOOST_FRAME_PIXEL_DECODER_BAKED_MODULE_PATH="/opt/blender-${BLENDER_VERSION}/${BLENDER_SERIES}/python/lib/python3.13/site-packages"
 
 # 4. Prepare runtime directories expected by RenderBoost worker scripts
 RUN mkdir -p /opt/renderboost /tmp/renderboost-blender-startup-logs /usr/share/nvidia

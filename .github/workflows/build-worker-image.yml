@@ -70,11 +70,11 @@ jobs:
           work_dir="$(mktemp -d)"
           blender_archive="$work_dir/blender-safe.tar.xz"
           decoder_wheel="$work_dir/openimageio.whl"
-          run_checked download-blender curl -fsSL "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2/blender-5.2.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v4-safe.tar.xz" -o "$blender_archive"
-          run_checked verify-blender sh -c 'printf "%s  %s\n" "$1" "$2" | sha256sum -c -' sh 'b7fb6011e3a65bbb475bd3c471a75a333548ff9d75c5f10774ffadbc6ebd1adb' "$blender_archive"
+          run_checked download-blender curl -fsSL "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.3.0-cycles-headless-rtx-osl-ffmpeg-audio-v1/blender-5.3.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v5-safe.tar.xz" -o "$blender_archive"
+          run_checked verify-blender sh -c 'printf "%s  %s\n" "$1" "$2" | sha256sum -c -' sh '056c642418bd058541939e195d10a34fd17343c49ed50bb32f943c3e50fd2ad1' "$blender_archive"
           mkdir -p "$work_dir/blender"
           run_checked extract-blender tar -xJf "$blender_archive" -C "$work_dir/blender"
-          site_packages="$work_dir/blender/blender-5.2.0-linux-x64/5.2/python/lib/python3.13/site-packages"
+          site_packages="$work_dir/blender/blender-5.3.0-linux-x64/5.3/python/lib/python3.13/site-packages"
           run_checked verify-numpy test -d "$site_packages/numpy"
           run_checked download-decoder curl -fsSL "https://files.pythonhosted.org/packages/b6/d9/6cf4c59529956eb98df523a797ef7c71e6e241676720f9b443c18e53bf35/openimageio-3.1.17.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl" -o "$decoder_wheel"
           run_checked verify-decoder-size sh -c 'test "$(wc -c < "$1" | tr -d "[:space:]")" = 6918964' sh "$decoder_wheel"
@@ -84,8 +84,8 @@ jobs:
           run_checked verify-decoder-extension test -f "$decoder_root/OpenImageIO.cpython-313-x86_64-linux-gnu.so"
           run_checked verify-decoder-library test -f "$decoder_root/lib/libOpenImageIO.so.3.1.17"
           export LD_LIBRARY_PATH="$decoder_root/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-          run_checked decoder-probe "$work_dir/blender/blender-5.2.0-linux-x64/5.2/python/bin/python3.13" -I -c 'import OpenImageIO as oiio, numpy; print("module", oiio.__file__); print("numpy", numpy.__version__); print("formats", oiio.get_string_attribute("format_list")); required = {"openexr", "jpeg", "png", "tiff", "webp"}; formats = set(oiio.get_string_attribute("format_list").split(",")); assert required <= formats, (required - formats, oiio.VERSION_STRING); print("version", oiio.VERSION_STRING)'
-          run_checked blender-version "$work_dir/blender/blender-5.2.0-linux-x64/blender" --version
+          run_checked decoder-probe "$work_dir/blender/blender-5.3.0-linux-x64/5.3/python/bin/python3.13" -I -c 'import OpenImageIO as oiio, numpy; print("module", oiio.__file__); print("numpy", numpy.__version__); print("formats", oiio.get_string_attribute("format_list")); required = {"openexr", "jpeg", "png", "tiff", "webp"}; formats = set(oiio.get_string_attribute("format_list").split(",")); assert required <= formats, (required - formats, oiio.VERSION_STRING); print("version", oiio.VERSION_STRING)'
+          run_checked blender-version "$work_dir/blender/blender-5.3.0-linux-x64/blender" --version
 
   build-and-push:
     runs-on: ubuntu-24.04
@@ -94,25 +94,25 @@ jobs:
       matrix:
         include:
           - variant: sm86
-            url: "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2/blender-5.2.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v4-sm86.tar.xz"
-            sha256: "51b560e12d6b759a895a8ef3a1161c74a1e83e55d537845463ccb707b1a34e5c"
-            artifact_id: "blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2:51b560e12d6b759a895a8ef3a1161c74a1e83e55d537845463ccb707b1a34e5c"
+            url: "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.3.0-cycles-headless-rtx-osl-ffmpeg-audio-v1/blender-5.3.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v5-sm86.tar.xz"
+            sha256: "09a4f18bdfe22d999228090c18b1d1c09766997656fb11309b37cc4de7e6332b"
+            artifact_id: "blender-5.3.0-cycles-headless-rtx-osl-ffmpeg-audio-v1:09a4f18bdfe22d999228090c18b1d1c09766997656fb11309b37cc4de7e6332b"
           - variant: sm89
-            url: "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2/blender-5.2.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v4-sm89.tar.xz"
-            sha256: "a5f79d0e6b13a0474c5a2ad64eb38b515d6929948deca1864d81bc0946915878"
-            artifact_id: "blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2:a5f79d0e6b13a0474c5a2ad64eb38b515d6929948deca1864d81bc0946915878"
+            url: "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.3.0-cycles-headless-rtx-osl-ffmpeg-audio-v1/blender-5.3.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v5-sm89.tar.xz"
+            sha256: "c839d626825e4e131a4d4892dc4aa320414fd5cc4381587fa38db8c43387a231"
+            artifact_id: "blender-5.3.0-cycles-headless-rtx-osl-ffmpeg-audio-v1:c839d626825e4e131a4d4892dc4aa320414fd5cc4381587fa38db8c43387a231"
           - variant: sm75
-            url: "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2/blender-5.2.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v4-sm75.tar.xz"
-            sha256: "b2c15a5ffe19573a1716f666ae96390ba993be34c04b452185c149263a83c8fb"
-            artifact_id: "blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2:b2c15a5ffe19573a1716f666ae96390ba993be34c04b452185c149263a83c8fb"
+            url: "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.3.0-cycles-headless-rtx-osl-ffmpeg-audio-v1/blender-5.3.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v5-sm75.tar.xz"
+            sha256: "ec556f8db34e1d0ee910e8c178baefd6f99bca24e40dcee38e17dd2cbdcefd7c"
+            artifact_id: "blender-5.3.0-cycles-headless-rtx-osl-ffmpeg-audio-v1:ec556f8db34e1d0ee910e8c178baefd6f99bca24e40dcee38e17dd2cbdcefd7c"
           - variant: sm120
-            url: "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2/blender-5.2.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v4-sm120.tar.xz"
-            sha256: "086a14ce4cd79588d665aad03cb98e737a50db158e3086ed79aa167eb8b1bbb5"
-            artifact_id: "blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2:086a14ce4cd79588d665aad03cb98e737a50db158e3086ed79aa167eb8b1bbb5"
+            url: "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.3.0-cycles-headless-rtx-osl-ffmpeg-audio-v1/blender-5.3.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v5-sm120.tar.xz"
+            sha256: "5e2ab464b376351b5a1bdb4b34182f310271793aee6d2d7d32325d0743b742b6"
+            artifact_id: "blender-5.3.0-cycles-headless-rtx-osl-ffmpeg-audio-v1:5e2ab464b376351b5a1bdb4b34182f310271793aee6d2d7d32325d0743b742b6"
           - variant: safe
-            url: "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2/blender-5.2.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v4-safe.tar.xz"
-            sha256: "b7fb6011e3a65bbb475bd3c471a75a333548ff9d75c5f10774ffadbc6ebd1adb"
-            artifact_id: "blender-5.2.0-cycles-headless-rtx-osl-ffmpeg-audio-v2:b7fb6011e3a65bbb475bd3c471a75a333548ff9d75c5f10774ffadbc6ebd1adb"
+            url: "https://github.com/agsdaegrytewwerty/ehrtedsaf/releases/download/blender-5.3.0-cycles-headless-rtx-osl-ffmpeg-audio-v1/blender-5.3.0-linux-x64-cycles-headless-rtx-osl-audio-lean-v5-safe.tar.xz"
+            sha256: "056c642418bd058541939e195d10a34fd17343c49ed50bb32f943c3e50fd2ad1"
+            artifact_id: "blender-5.3.0-cycles-headless-rtx-osl-ffmpeg-audio-v1:056c642418bd058541939e195d10a34fd17343c49ed50bb32f943c3e50fd2ad1"
           - variant: base
             url: ""
             sha256: ""
@@ -152,6 +152,8 @@ jobs:
             BLENDER_URL=${{ matrix.url }}
             BLENDER_SHA256=${{ matrix.sha256 }}
             BLENDER_ARTIFACT_ID=${{ matrix.artifact_id }}
+            BLENDER_VERSION=5.3.0
+            BLENDER_SERIES=5.3
             NODE_SHA256=406791658a8bce3bc21fab786f45877adad391ea20badc87e1d65c7478b75062
             OPENIMAGEIO_WHEEL_SHA256=420a2cbfc7358c281a0902e9daa4ee229e7cb9071be4704ddf8943930c184f78
             OPENIMAGEIO_WHEEL_BYTES=6918964
