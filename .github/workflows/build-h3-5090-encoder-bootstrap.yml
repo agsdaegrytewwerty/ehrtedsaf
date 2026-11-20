@@ -1,0 +1,50 @@
+name: Build H3 RTX 5090 encoder bootstrap
+on:
+  push:
+    branches: [salad-h3-5090]
+    paths:
+      - .github/workflows/build-h3-5090-encoder-bootstrap.yml
+      - h3-5090/Dockerfile.encoder-bootstrap
+      - h3-5090/encoder-bootstrap.sh
+      - h3-5090/start.py
+      - h3-5090/models.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PACKAGE: ghcr.io/agsdaegrytewwerty/projectswift-comfyui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish the encoder bootstrap
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: h3-5090
+          file: h3-5090/Dockerfile.encoder-bootstrap
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.PACKAGE }}:h3-5090-encoder-bootstrap-${{ github.sha }}
+          provenance: false
+          sbom: false
+      - name: Verify image size
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          ref="$PACKAGE@$DIGEST"
+          docker buildx imagetools inspect --raw "$ref" > bootstrap.json
+          size="$(jq -er '[.layers[].size] | add' bootstrap.json)"
+          test "$size" -lt 250000000
+          printf 'Encoder bootstrap `%s` (%s bytes)\n' "$ref" "$size" >> "$GITHUB_STEP_SUMMARY"

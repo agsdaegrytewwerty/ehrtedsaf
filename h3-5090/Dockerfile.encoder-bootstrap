@@ -1,0 +1,16 @@
+# syntax=docker/dockerfile:1
+FROM python:3.13-slim-bookworm
+ARG COMFY_REV=2c75dc1b379a59e0880619d029607af5169a62ef
+ENV PYTHONUNBUFFERED=1 PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    NVIDIA_VISIBLE_DEVICES=all NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    H3_ROLE=encoder H3_ENCODER_PROFILE=int8 DEBIAN_FRONTEND=noninteractive
+LABEL org.opencontainers.image.title="ProjectSwift H3 RTX 5090 reference encoder bootstrap"
+ADD https://codeload.github.com/Comfy-Org/ComfyUI/tar.gz/${COMFY_REV} /tmp/comfy.tar.gz
+RUN mkdir -p /opt/ComfyUI \
+    && tar -xzf /tmp/comfy.tar.gz --directory=/opt/ComfyUI --strip-components=1
+COPY comfy_salad_h3 /opt/ComfyUI/custom_nodes/salad_h3
+COPY models.json start.py torch.constraints.txt /opt/h3/
+COPY encoder-bootstrap.sh /opt/h3/encoder-bootstrap.sh
+WORKDIR /opt/ComfyUI
+EXPOSE 8188
+CMD ["/bin/sh", "/opt/h3/encoder-bootstrap.sh"]
