@@ -1,0 +1,66 @@
+{
+  "3": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "reference.png"
+    }
+  },
+  "8": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_32b_minimax_h3_native_w4g128_w6protected_15.35gb.safetensors",
+      "type": "minimax",
+      "device": "default"
+    }
+  },
+  "12": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "minimax_h3_video_vae_int8_convrot.safetensors"
+    }
+  },
+  "18": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "A paper windmill in <Picture 1> turns slowly in a light breeze. Static camera, quiet garden ambience."
+    }
+  },
+  "19": {
+    "class_type": "MiniMaxH3ReferenceToVideo",
+    "inputs": {
+      "clip": [
+        "8",
+        0
+      ],
+      "vae": [
+        "12",
+        0
+      ],
+      "width": 832,
+      "height": 480,
+      "length": 124,
+      "ref_image_size": "match",
+      "prompt": [
+        "18",
+        0
+      ],
+      "ref_images.ref_image_0": [
+        "3",
+        0
+      ]
+    }
+  },
+  "37": {
+    "class_type": "SaladH3SaveCondition",
+    "inputs": {
+      "conditioning": [
+        "19",
+        0
+      ],
+      "filename": "encoder-test.h3cond",
+      "width": 832,
+      "height": 480,
+      "frames": 124
+    }
+  }
+}

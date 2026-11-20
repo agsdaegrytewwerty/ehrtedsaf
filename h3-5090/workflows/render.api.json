@@ -1,0 +1,160 @@
+{
+  "7": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "10Eros_Max_h3_8stepTURBO_beta7_fix1_activation_learned_HQ.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "12": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "minimax_h3_video_vae_int8_convrot.safetensors"
+    }
+  },
+  "15": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
+    }
+  },
+  "20": {
+    "class_type": "EmptyMiniMaxH3LatentAV",
+    "inputs": {
+      "width": 832,
+      "height": 480,
+      "length": 124
+    }
+  },
+  "21": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "vae": [
+        "12",
+        0
+      ],
+      "samples": [
+        "30",
+        0
+      ]
+    }
+  },
+  "22": {
+    "class_type": "VAEDecodeAudio",
+    "inputs": {
+      "vae": [
+        "15",
+        0
+      ],
+      "samples": [
+        "30",
+        0
+      ]
+    }
+  },
+  "25": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": 12345
+    }
+  },
+  "26": {
+    "class_type": "BasicGuider",
+    "inputs": {
+      "model": [
+        "33",
+        0
+      ],
+      "conditioning": [
+        "38",
+        0
+      ]
+    }
+  },
+  "27": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler"
+    }
+  },
+  "29": {
+    "class_type": "BasicScheduler",
+    "inputs": {
+      "model": [
+        "33",
+        0
+      ],
+      "scheduler": "simple",
+      "steps": 8,
+      "denoise": 1
+    }
+  },
+  "30": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "25",
+        0
+      ],
+      "guider": [
+        "26",
+        0
+      ],
+      "sigmas": [
+        "29",
+        0
+      ],
+      "sampler": [
+        "27",
+        0
+      ],
+      "latent_image": [
+        "20",
+        0
+      ]
+    }
+  },
+  "32": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": [
+        "21",
+        0
+      ],
+      "audio": [
+        "22",
+        0
+      ],
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "salad-h3/render",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "pingpong": false,
+      "save_output": true,
+      "save_metadata": false,
+      "trim_to_audio": false
+    }
+  },
+  "33": {
+    "class_type": "MiniMaxH3SigmaShift",
+    "inputs": {
+      "model": [
+        "7",
+        0
+      ],
+      "shift_video": 12.0,
+      "shift_audio": 3.0
+    }
+  },
+  "38": {
+    "class_type": "SaladH3LoadCondition",
+    "inputs": {
+      "filename": "encoder-test.h3cond",
+      "width": 832,
+      "height": 480,
+      "frames": 124
+    }
+  }
+}
