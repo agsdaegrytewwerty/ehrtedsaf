@@ -36,20 +36,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and publish the two role images
-        id: images
-        uses: docker/bake-action@v6
-        with:
-          workdir: h3-5090
-          files: docker-bake.hcl
-          push: true
-          provenance: false
-          sbom: false
+        working-directory: h3-5090
+        run: |
+          docker buildx bake -f docker-bake.hcl --push --provenance=false --sbom=false \
+            --metadata-file "$RUNNER_TEMP/h3-build.json"
       - name: Verify GHCR manifest sizes
-        env:
-          BUILD_METADATA: ${{ steps.images.outputs.metadata }}
         run: |
           for role in encoder render; do
-            digest="$(jq -er --arg role "$role" '.[$role]["containerimage.digest"]' <<< "$BUILD_METADATA")"
+            digest="$(jq -er --arg role "$role" '.[$role]["containerimage.digest"]' "$RUNNER_TEMP/h3-build.json")"
             ref="$PACKAGE@$digest"
             docker buildx imagetools inspect --raw "$ref" > "$role.json"
             compressed="$(jq -er '.layers | map(.size) | add' "$role.json")"
